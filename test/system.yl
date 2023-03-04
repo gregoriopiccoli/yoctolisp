@@ -1,0 +1,177 @@
+(princln "reading system.yl ...")
+
+(defmacro define (name body)
+  (if (atom name)
+    (list 'setq name body)
+    (cons 'defun (cons (car name) (list (cdr name) body)))
+))
+
+(defmacro trace(x)(cond
+  ((not(atom x)) (error "trace: not a function name"))
+  ((atom(eval x)) (error "trace: not a function"))
+  ((<> (car(eval x)) 'lambda) (error "trace: not a lambda"))
+  (t(list 'trace-1 (list 'quote x) x))
+))
+
+(defun trace-1(fn fdef)
+ ; (print "fn  =" fn :nl
+ ;        "type=" (car fdef) :nl
+ ;        "prms=" (cadr fdef) :nl
+ ;        "body=" (caddr fdef) :nl
+ ;        "clos=" (cdddr fdef) :nl
+ (set fn
+         (cons (car fdef)
+           (cons (cadr fdef)
+             (cons
+               (list 'progn
+                 (append
+                   (list 'princln (list 'trace-spc-in) (list 'quote fn) "[" )
+                   (trace-prm (cadr fdef))
+                   (list "]")
+                 )
+                 (list 'princln (list 'trace-spc-out) (list 'quote fn) ":" (list 'dec-trace-spc (caddr fdef)))
+               )
+               (cdddr fdef)
+             )
+           )
+         )
+))
+
+(defun trace-prm(x)(cond
+  ((null x) nil)
+  ((atom x) (list x))
+  (t (cons (car x) (cons  (if (not(null(cdr x))) "," "")  (trace-prm (cdr x)))))
+))
+
+(defmacro untrace(x)(list 'setq x (list 'untrace-1 x)))
+(defun untrace-1(x)
+  (cons (car x)
+  (cons (cadr x)
+  (cons (cadaddddaddaddr x)
+        (cdddr x)
+  )))
+)
+
+(setq trace-spaces 0)
+(defun trace-spc-in()(let((res (spaces trace-spaces)))(progn
+  (setq trace-spaces (+ trace-spaces 2))
+  res
+)))
+(defun trace-spc-out()(spaces (- trace-spaces 2)))
+(defun dec-trace-spc(x)(progn
+  (setq trace-spaces (- trace-spaces 2))
+  x
+))
+
+; --- property lists
+(setq *plists* nil)
+
+(defun symbol-plist (sym)
+  (cdr (or (assoc sym *plists*) '(()))))
+
+(defun set-symbol-plist (sym lst)
+  (let ((p (assoc sym *plists*)))
+    (if (null p)  ; sym has no plist yet
+        (setq *plists* (cons (cons sym lst) *plists*))
+      (rplacd p lst))))
+
+(defun get (sym prop)
+  (let ((pl (symbol-plist sym)))
+    (if pl
+        (let ((pr (member prop pl)))
+          (if pr (cadr pr) nil))
+      nil)))
+
+(defun put (sym prop val)
+  (progn 
+  (let ((p (assoc sym *plists*)))
+    (if (null p)  ; sym has no plist yet
+        (setq *plists* (cons (list sym prop val) *plists*))
+        (let ((pr (member prop p)))
+          (if (null pr)  ; sym doesn't have this property yet
+              (rplacd p (cons prop (cons val (cdr p))))
+              (rplaca (cdr pr) val)))))
+  val)
+)
+
+; --- operazioni sulle liste
+(defun last(x)(cond((null x)nil)((atom x) (error "last:not a proper list"))((atom(cdr x))x)(t (last(cdr x)))))
+(defun listp(x)(cond((null x)t)((atom x) nil)(t t)))
+(defun consp(x)(not(atom x)))
+(defun keywordp(x)(and(symp x)(=(at ":" x)0)))
+(defun nconc x (cond((null x) nil) ((null (cdr x)) (car x))((atom (car x))(error "nconc: first arg. not a list"))(t (let((l (last (car x))))(progn (rplacd l (cadr x)) (car x))))))
+(defun ff(x)(if (atom x) x (ff (car x))))
+(defun subst(x y z)(cond((equal y z) x)((atom z) z)(t(cons(subst x y (car z))(subst x y (cdr z))))))
+
+(defun union(x y) (cond((null x) y)((member (car x) y)(union(cdr x)y))(t(cons(car x) (union (cdr x) y)))))
+(defun intersection(x y)(cond((null x)nil)((member(car x) y)(cons (car x)(intersection(cdr x) y)))(t(intersection(cdr x)y))))
+(defun difference(a b)(filter (lambda(x)(not(member x b))) a))
+
+(defun copy-tree(l)(if (atom l) l (cons(copy-tree (car l))(copy-tree(cdr l)))))
+
+(defmacro push(value var)(list 'setq  var (list 'cons value var)))
+
+; --- MAX e MIN
+(defun max(x y)(if (> x y) x y))
+(defun min(x y)(if (< x y) x y))
+
+; --- Fold e Reduce
+(defun fold(op acc lst)(if (null lst) acc (fold op (op acc (car lst))(cdr lst))))
+(defun reduce(op lst)(fold op (car lst)(cdr lst)))
+
+; --- operazioni sulle stringhe
+(defun left(s l)(substr s 0 l))
+(defun right(s l)(substr s (- (len s) l)))
+
+; --- Quicksort su atomi! ---
+;(defun sort(l)
+;  (if (null l)
+;      nil
+;      (let ((pivot (car l)))
+;        (let((left (filter (lambda(x)(< x pivot))(cdr l)))
+;             (right(filter (lambda(x)(not(< x pivot)))(cdr l)))) ; --- così prende anche le sottoliste, altrimenti funziona solo con gli atomi
+;          (append (sort left) (list pivot) (sort right))
+;   ))
+;))
+
+(defun sort(l)(if (atom l) l (sort-h1 (car l)(cdr l))))
+(defun sort-h1(pivot l)(sort-h2 (filter (lambda(x)(< x pivot)) l) pivot (filter (lambda(x)(not(< x pivot))) l))) 
+(defun sort-h2(left pivot right) (append (sort left) (list pivot) (sort right)))
+
+; --- Quicksort su liste! ---
+(defun sort+(l)
+  (if (null l)
+      nil
+      (let ((pivotelem (car l))
+            (pivot (ff (car l))))
+        (let((left (filter (lambda(x)(< (ff x) pivot))(cdr l)))
+             (right(filter (lambda(x)(>= (ff x) pivot))(cdr l))))
+          (append (sort+ left) (list pivotelem) (sort+ right))
+   ))
+))
+
+; --- la DO del common lisp
+(defmacro ddo(init test . body)
+  (let ((init-var (do-init-var init))
+        (step-var (do-step-var init))
+        (test-t (car test))
+        (test-r (cadr test)))
+  (list 'let init-var (list 'while (list 'not test-t) (append (list 'progn) body step-var) test-r ))
+))
+(defun do-init-var(l)(if (null l) nil (cons (list (caar l) (cadar l)) (do-init-var (cdr l)))))
+(defun do-step-var(l)(if (null l) nil (cons (list 'setq (caar l) (caddar l)) (do-step-var (cdr l)))))
+
+;(defmacro when(test value)(list 'if test value nil))
+(defmacro when(test value)(list 'cond (list test value)))
+;(defmacro unless(test value)(list 'if (list 'not test) value nil))
+(defmacro unless(test value)(list 'cond (list (list 'not test) value)))
+
+; --- la LABELS del common lisp
+(defmacro labels(defs . prg)(list 'let (labels-let defs) (cons 'progn (append (labels-setq defs) prg))))
+
+(defun labels-let(defs)(if (null defs) nil (cons (list (caar defs) nil) (labels-let (cdr defs)))))
+
+(defun labels-setq(defs)(if (null defs) nil (cons (list 'setq (caar defs) (list 'lambda (cadar defs) (caddar defs))) (labels-setq (cdr defs)))))
+
+; --- esperimento per gestire le assoc list
+; (defun assign(x v a)(let((r (assoc x a)))(if r (rplacd r v) (let ((l (last aa))) (rplacd l (cons (cons x v) nil))))))
