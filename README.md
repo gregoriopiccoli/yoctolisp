@@ -14,7 +14,9 @@ Cd to directory test, then all files with .l extension are small test case.
 Examples:
 
 (defun ff(x) (if(atom x) x (ff(car x))))
+
 (ff '((a b) c)) 
+
 (+ 1 2 3 4)
 
 
