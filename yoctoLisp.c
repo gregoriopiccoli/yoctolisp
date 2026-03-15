@@ -63,7 +63,7 @@ garbage collector: mark-sweep.
 // eliminare *plist* da system.yl -- non disturba ...
 
 #define LEXICAL_SCOPING
-//#define TAILCALL
+#define TAILCALL
 #define SAFE_STACK
 #define SAFE_CXR
 //#define DEBUG_GC
@@ -1479,7 +1479,7 @@ static cell* bi_removeS(const int n){
 static cell* bi_prog1(cell* x,cell* a){
   cell* first=0;
   if (x && car(x)) {
-		first=eval(x->car,a);
+	  first=eval(x->car,a);
 	  x=x->cdr;
 	}
   while (x) {
@@ -1491,7 +1491,11 @@ static cell* bi_prog1(cell* x,cell* a){
 
 static cell* bi_progn(cell* x,cell* a){
   cell* last=0;
-  while (x) {
+  while (x){
+#ifdef TAILCALL
+    if (!cdr(x)) // ultima espessione, si può fare un tampolino
+      return mk_trampoline(car(x),a);
+#endif
     last=eval(car(x),a);
     x=x->cdr;
   }
