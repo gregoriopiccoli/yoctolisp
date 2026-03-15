@@ -63,17 +63,17 @@ garbage collector: mark-sweep.
 // eliminare *plist* da system.yl -- non disturba ...
 
 #define LEXICAL_SCOPING
-#define TAILCALL
+//#define TAILCALL
 #define SAFE_STACK
 #define SAFE_CXR
 //#define DEBUG_GC
 //#define DEBUG_C_MEMORY
 //#define REPL_TIMING
-#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
+//#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
 
-#define MAX_CELLS 40000 // cons cells allocation block size
-#define MAX_SYMS  500   // symbols allocation block size (not garbage collected)
-#define MAX_STK   10000 // stack size
+#define MAX_CELLS 100000 // cons cells allocation block size
+#define MAX_SYMS  10000  // symbols allocation block size (not garbage collected)
+#define MAX_STK   100000 // stack size
 
 #ifdef DEBUG_C_MEMORY
 #define MEMWATCH
