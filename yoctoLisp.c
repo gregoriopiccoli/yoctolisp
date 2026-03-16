@@ -69,7 +69,7 @@ garbage collector: mark-sweep.
 //#define DEBUG_GC
 //#define DEBUG_C_MEMORY
 //#define REPL_TIMING
-//#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
+#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
 
 #define MAX_CELLS 100000 // cons cells allocation block size
 #define MAX_SYMS  10000  // symbols allocation block size (not garbage collected)
@@ -732,14 +732,14 @@ static cell* bi_celltypeS(int n){
 static cell* bi_rplacaS(int n){
   CHECK2PRMN(n,"rplaca");
   cell* c=yl_stk[yl_sp-2],*v=yl_stk[yl_sp-1];
-  if (!c || c->type) yl_lerror(LISP_ERROR,"rplaca: cons expected");
+  if (!c || c->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"rplaca: cons expected");
   return rplaca(c,v);
 }
 
 static cell* bi_rplacdS(int n){
   CHECK2PRMN(n,"rplacd");
   cell* c=yl_stk[yl_sp-2],*v=yl_stk[yl_sp-1];
-  if (!c || c->type) yl_lerror(LISP_ERROR,"rplacd: cons expected");
+  if (!c || c->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"rplacd: cons expected");
   return rplacd(c,v);
 }
 
@@ -839,10 +839,10 @@ static cell* bi_subS(int n){
 }
 
 static cell* bi_multS(int n){
-  int r=get_num(yl_stk[yl_sp-n],"-");
+  int r=get_num(yl_stk[yl_sp-n],"*");
   n--;
   while(n){
-    r*=get_num(yl_stk[yl_sp-n],"-");
+    r*=get_num(yl_stk[yl_sp-n],"*");
     n--;
   }
   return mk_num(r);
