@@ -72,7 +72,7 @@ garbage collector: mark-sweep.
 #define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
 
 #define MAX_CELLS 100000 // cons cells allocation block size
-#define MAX_SYMS  10000  // symbols allocation block size (not garbage collected)
+#define MAX_SYMS  1000   // symbols allocation block size (not garbage collected)
 #define MAX_STK   100000 // stack size
 
 #ifdef DEBUG_C_MEMORY
@@ -152,10 +152,10 @@ static inline int is_cons(const cell* c){return c->type==TYPE_CONS;}
 int max_stack=0;
 // funzioni di gestione dello stack per tenere attive le strutture durante la garbage collection
 static inline cell* push(cell* x){yl_stk[yl_sp++]=x;if(yl_sp>=MAX_STK) yl_lerror(SYSTEM_ERROR,"stack overflow");/*if(yl_sp>max_stack){printf("max:%d\n",yl_sp);max_stack=yl_sp;};*/return x;}
-static inline cell* pop(cell* x){yl_sp--;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack undeflow");return x;}
-static inline cell* pop2(cell* x){yl_sp-=2;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack undeflow");return x;}
-static inline cell* popn(cell* x,int n){yl_sp-=n;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack undeflow in popn");return x;}
-static inline cell* swp(cell* x){if(yl_sp<1) yl_lerror(SYSTEM_ERROR,"stack undeflow in swp"); yl_stk[yl_sp-1]=x;return x;}
+static inline cell* pop(cell* x){yl_sp--;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack underflow");return x;}
+static inline cell* pop2(cell* x){yl_sp-=2;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack underflow");return x;}
+static inline cell* popn(cell* x,int n){yl_sp-=n;if(yl_sp<0) yl_lerror(SYSTEM_ERROR,"stack underflow in popn");return x;}
+static inline cell* swp(cell* x){if(yl_sp<1) yl_lerror(SYSTEM_ERROR,"stack underflow in swp"); yl_stk[yl_sp-1]=x;return x;}
 #define CHECK_0(cond,t,msg) if (cond) yl_lerror(t,msg);
 #define CHECK_I(cond,t,msg,i) if (cond) yl_lerror_i(t,msg,i);
 #define CHECK_S(cond,t,msg,s) if (cond) yl_lerror_s(t,msg,s);
@@ -279,7 +279,7 @@ static void yl_gc(){
 
 static void yl_addCellsBlock(){
   cellsBlock *cb=malloc(sizeof(cellsBlock));
-  if (!cb) yl_lerror(SYSTEM_ERROR,"memory exausted");
+  if (!cb) yl_lerror(SYSTEM_ERROR,"memory exhausted");
 #ifdef DEBUG_GC
   cb->guard=12321;
 #endif // DEBUG_GC
@@ -305,7 +305,7 @@ static void yl_addCellsBlock(){
 
 static void yl_addSymsBlock(){
   symsBlock *sb=malloc(sizeof(symsBlock));
-  if (!sb) yl_lerror(SYSTEM_ERROR,"memory exausted");
+  if (!sb) yl_lerror(SYSTEM_ERROR,"memory exhausted");
   yl_nsymsblocks++;
   sb->next=0;
   if (yl_lsb)
@@ -408,7 +408,7 @@ static cell* mk_sym(const char* n){
     sb=sb->next;
   }
   // crea un nuovo simbolo
-  //if (yl_nsyms==MAX_SYMS) yl_lerror(SYSTEM_ERROR,"symbols memory exausted");
+  //if (yl_nsyms==MAX_SYMS) yl_lerror(SYSTEM_ERROR,"symbols memory exahusted");
   if (yl_nsyms==MAX_SYMS) yl_addSymsBlock();
   cell* c=&yl_lsb->syms[yl_nsyms++];
   c->type=(n[0]==':'?TYPE_KEYWORD:TYPE_SYM);
@@ -907,7 +907,7 @@ static cell* bi_addS(int n){
     if (l+strlen_add+1>=bl){
       // la nuova stringa non ci sta ... nuovo buffer
       nbl=l+strlen_add+1;if (nbl<bl*2) nbl=bl*2; //determina la lunghezza del nuovo buffer
-      tmp=(char*)malloc(nbl); if (!tmp){if (bl!=100) free(newstr);yl_lerror(SYSTEM_ERROR,"memory exausted adding strings!");}
+      tmp=(char*)malloc(nbl); if (!tmp){if (bl!=100) free(newstr);yl_lerror(SYSTEM_ERROR,"memory exhausted adding strings!");}
       strcpy(tmp,newstr);if (bl!=100) free(newstr); //copia il contenuto del buffer nel nuovo buffer e libera il vecchio buffer
       newstr=tmp;bl=nbl; // sposta tutto nel nuovo buffer
     }
@@ -1033,13 +1033,13 @@ static cell* bi_substrS(int n){
   cell* s=yl_stk[yl_sp-n];
   cell* start=yl_stk[yl_sp-n+1];
   if (!s || s->type!=TYPE_STR) yl_lerror(LISP_ERROR,"substr: str expected as first parameter");
-  if (!start || start->type!=TYPE_NUM || start->value<0) yl_lerror(LISP_ERROR,"substr: num >0 expected as second parameter");
+  if (!start || start->type!=TYPE_NUM || start->value<0) yl_lerror(LISP_ERROR,"substr: num>0 expected as second parameter");
   int sl=strlen(s->str);
   int p=sl;
   if (start->value<p) p=start->value;
   if (n==2) return mk_str((char*)(s->str+p));
   cell *len=yl_stk[yl_sp-1];
-  if(!len || len->type!=TYPE_NUM || len->value<0) yl_lerror(LISP_ERROR,"substr: num >0 expected ad third parameter");
+  if(!len || len->type!=TYPE_NUM || len->value<0) yl_lerror(LISP_ERROR,"substr: num>0 expected as third parameter");
   int l=len->value;
   if (l+p>sl) l=sl-p;
   char c=s->str[p+l];
@@ -1780,12 +1780,17 @@ static cell* bi_env(cell* x,cell* a){
   // altrimenti torna l' ambiente globale
   int i;
   cell* res=push(0);
-  // ------ DA FARE ----- !!!!
-  for(i=0;i<yl_nsyms;i++){
-    cell* c=&yl_fsb->syms[i];
-    if (c->type==TYPE_SYM && c->globalassigned){
-      res=swp(mk_cons(mk_cons(c,c->globalvalue),res));
+  symsBlock* sb=yl_fsb;
+  while(sb){
+    int nsyms=(sb->next?MAX_SYMS:yl_nsyms);
+    cell* syms=sb->syms;
+    for(i=0;i<nsyms;i++){
+      cell* c=&syms[i];
+      if (c->type==TYPE_SYM && c->globalassigned){
+        res=swp(mk_cons(mk_cons(c,c->globalvalue),res));
+      }
     }
+    sb=sb->next;
   }
   return pop(res);
 }
