@@ -1703,15 +1703,26 @@ static cell* load(cell* n,cell* report){
   else if (is_str(n)) f=fopen(n->str,"r");
   int mode=(report ? (report->type==TYPE_NUM?report->value:1):0);
   if (f) {
-    while(!feof(f)){
-			curr_fn=anon_atom;
-      n=read_sexpr(f);
-      if (mode>=2){printf(" in:");print_sexpr(n,1);printf("\n");}
-      n=eval(n,0);
-      if (mode>=1){printf("out:");print_sexpr(n,1);printf("\n");}
+    jmp_buf old_mainloop,local_mainloop;
+    memcpy(old_mainloop,yl_mainloop,sizeof(jmp_buf));
+    int lj=setjmp(local_mainloop);
+    if (!lj){
+      memcpy(yl_mainloop,local_mainloop,sizeof(jmp_buf));
+      while(!feof(f)){
+				curr_fn=anon_atom;
+        n=read_sexpr(f);
+        if (mode>=2){printf(" in:");print_sexpr(n,1);printf("\n");}
+        n=eval(n,0);
+        if (mode>=1){printf("out:");print_sexpr(n,1);printf("\n");}
+      }
+      fclose(f);
+      memcpy(yl_mainloop,old_mainloop,sizeof(jmp_buf));
+      return t_atom;
+    } else {
+      fclose(f);
+      memcpy(yl_mainloop,old_mainloop,sizeof(jmp_buf));
+      longjmp(yl_mainloop,lj);
     }
-    fclose(f);
-    return t_atom;
   }
   return 0;
 }
