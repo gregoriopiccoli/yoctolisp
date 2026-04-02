@@ -408,7 +408,7 @@ static cell* mk_sym(const char* n){
     sb=sb->next;
   }
   // crea un nuovo simbolo
-  //if (yl_nsyms==MAX_SYMS) yl_lerror(SYSTEM_ERROR,"symbols memory exahusted");
+  //if (yl_nsyms==MAX_SYMS) yl_lerror(SYSTEM_ERROR,"symbols memory exhausted");
   if (yl_nsyms==MAX_SYMS) yl_addSymsBlock();
   cell* c=&yl_lsb->syms[yl_nsyms++];
   c->type=(n[0]==':'?TYPE_KEYWORD:TYPE_SYM);
