@@ -89,7 +89,7 @@ typedef struct cell {
     struct {
       union {
         struct cell* car;
-				struct cell* letloop;
+        struct cell* letloop;
         char* sym;
         int value;
         char* str;
@@ -195,7 +195,7 @@ cell* next_free_cell(cell* x){ASSERTGC(x->type==TYPE_FREE,"not free cell");retur
 //static inline int atom(cell* a){if (!a) return 1;CHECKFREECELL(a);return a->type!=TYPE_CONS;}
 #define atom(a) (a?a->type/*!=TYPE_CONS*/:1)
 
-static void print_sexpr(cell* c,int mode);
+static void print_sexpr(FILE* f,cell* c,int mode);
 
 static void yl_mark(cell* c){
   while (c && !c->gc){
@@ -547,25 +547,25 @@ static cell* read_sexpr_tok(FILE* f,int tok){
       cell* c=push(mk_cons(t_atom,0));
       cell* n=c;
       while (tok!=TOK_CLOSE && tok!=TOK_DOT) {
-        //printf("read-1 n:");print_sexpr(n,0);printf("\n");
+        //printf("read-1 n:");print_sexpr(stdout,n,0);printf("\n");
         cell* xx=read_sexpr_tok(f,tok);
-        //printf("read0 xx:");print_sexpr(xx,1);printf("\n");
-        //printf("read0 n:");print_sexpr(n,0);printf("\n");
+        //printf("read0 xx:");print_sexpr(stdout,xx,1);printf("\n");
+        //printf("read0 n:");print_sexpr(stdout,n,0);printf("\n");
         rplaca(n,xx);
-        //printf("read1 n:");print_sexpr(n,0);printf("\n");
-        //printf("read1 c:");print_sexpr(c,0);printf("\n");
+        //printf("read1 n:");print_sexpr(stdout,n,0);printf("\n");
+        //printf("read1 c:");print_sexpr(stdout,c,0);printf("\n");
         tok=nexttoken(f);
         if (tok!=TOK_DOT && tok!=TOK_CLOSE){
           rplacd(n,mk_cons(t_atom,0));
-          //printf("read4 n:");print_sexpr(n,0);printf("\n");
-          //printf("read4 c:");print_sexpr(c,0);printf("\n");
+          //printf("read4 n:");print_sexpr(stdout,n,0);printf("\n");
+          //printf("read4 c:");print_sexpr(stdout,c,0);printf("\n");
           n=n->cdr;
         }
       }
       if (tok==TOK_DOT){
         tok=nexttoken(f);
         rplacd(n,read_sexpr_tok(f,tok));
-        //printf("read2:");print_sexpr(c,0);printf("\n");
+        //printf("read2:");print_sexpr(stdout,c,0);print("\n");
         tok=nexttoken(f);
       } else {
         n->cdr=0;
@@ -573,7 +573,7 @@ static cell* read_sexpr_tok(FILE* f,int tok){
       if (tok!=TOK_CLOSE){
         yl_lerror(LISP_ERROR,") expected");
       }
-      //printf("read3:");print_sexpr(c,0);printf("\n");
+      //printf("read3:");print_sexpr(stdout,c,0);printf("\n");
       return pop(c);
     } else {
       return 0;
@@ -601,7 +601,9 @@ static int already_printed(cell* c){
   return 0;
 }
 
-static void print_sexpr(cell* c,int mode){
+FILE* yl_stdout;
+ 
+static void print_sexpr(FILE* f,cell* c,int mode){
   int isStart=(yl_print_stack_base==-1),ap;
   if (!isStart && c && c->type==TYPE_CONS) { // è una chiamata ricorsiva, controlla che non sia già stato stampato
     ap=already_printed(c);
@@ -615,45 +617,45 @@ static void print_sexpr(cell* c,int mode){
   push(c);
   if (c){
     switch(c->type){
-    case TYPE_NUM:printf("%i",c->value);break;
-    case TYPE_STR:printf((mode?"\"%s\"":"%s"),c->str);break;
+    case TYPE_NUM:fprintf(f,"%i",c->value);break;
+    case TYPE_STR:fprintf(f,(mode?"\"%s\"":"%s"),c->str);break;
     case TYPE_SYM:
     case TYPE_KEYWORD:
     case TYPE_CXR:
-    case TYPE_BUILTINSTACK:                           //printf("<lambda:%s>",c->sym);break;
-    case TYPE_BUILTINLAMBDA:                          //printf("<LAMBDA:%s>",c->sym);break;
-    case TYPE_BUILTINMACRO:printf("%s",c->sym);break; //printf("<macro:%s>",c->sym);break;
-    case TYPE_LETLOOP:printf("<let:%s>",c->letloop->sym);break;
+    case TYPE_BUILTINSTACK:                              //fprintf(f,"<lambda:%s>",c->sym);break;
+    case TYPE_BUILTINLAMBDA:                             //fprintf(f,"<LAMBDA:%s>",c->sym);break;
+    case TYPE_BUILTINMACRO:fprintf(f,"%s",c->sym);break; //fprintf(f,"<macro:%s>",c->sym);break;
+    case TYPE_LETLOOP:fprintf(f,"<let:%s>",c->letloop->sym);break;
     case TYPE_CONS:
-      printf("(");
+      fprintf(f,"(");
       ap=0;
       while (c->cdr && is_cons(c->cdr) && !ap){
-        print_sexpr(c->car,mode);
-        printf(" ");
+        print_sexpr(f,c->car,mode);
+        fprintf(f," ");
         c=c->cdr;
         ap=already_printed(c);
       }
       if (ap){
-        printf(" #%d# ",ap);
+        fprintf(f," #%d# ",ap);
       } else {
-        print_sexpr(c->car,mode);
+        print_sexpr(f,c->car,mode);
         if (c->cdr){
-          printf(" . ");
-          print_sexpr(c->cdr,mode);
+          fprintf(f," . ");
+          print_sexpr(f,c->cdr,mode);
         }
       }
-      printf(")");
+      fprintf(f,")");
       break;
     default:yl_lerror(SYSTEM_ERROR,"printing a free cell");
     }
   } else {
-    printf("nil");
+    fprintf(f,"nil");
   }
   pop(c);
   if (isStart) yl_print_stack_base=-1;
 }
 
-void showdbg(char* s,cell* x){printf("%s=",s);print_sexpr(x,0);printf("\n");}
+void showdbg(char* s,cell* x){printf("%s=",s);print_sexpr(stdout,x,0);printf("\n");}
 
 // --------- l' interprete! ---------------------------------------
 
@@ -1138,11 +1140,11 @@ static cell* print(int n,const int mode,const int newline){
   cell* last=0;
   while (n){
     last=yl_stk[yl_sp-n];
-    if (last && last->type==TYPE_KEYWORD && strcmp(last->sym,":nl")==0) printf("\n");
-    else print_sexpr(last,mode);
+    if (last && last->type==TYPE_KEYWORD && strcmp(last->sym,":nl")==0) fprintf(yl_stdout,"\n");
+    else print_sexpr(yl_stdout,last,mode);
     n--;
   }
-  if (newline) printf("\n");
+  if (newline) fprintf(yl_stdout,"\n");
   return last;
 }
 
@@ -1305,7 +1307,7 @@ static cell* bi_let(cell* x,cell* a){
     //print_sexpr(loopfn,1);printf("\n");
     pop2(0);
     na=swp(mk_cons(mk_cons(loopname,loopfn),na));
-    //print_sexpr(na,1);printf("\n");
+    //print_sexpr(stdout,na,1);printf("\n");
     //
     int loop=1;
     cell* fn=curr_fn;
@@ -1711,9 +1713,9 @@ static cell* load(cell* n,cell* report){
       while(!feof(f)){
 				curr_fn=anon_atom;
         n=read_sexpr(f);
-        if (mode>=2){printf(" in:");print_sexpr(n,1);printf("\n");}
+        if (mode>=2){printf(" in:");print_sexpr(yl_stdout,n,1);printf("\n");}
         n=eval(n,0);
-        if (mode>=1){printf("out:");print_sexpr(n,1);printf("\n");}
+        if (mode>=1){printf("out:");print_sexpr(yl_stdout,n,1);printf("\n");}
       }
       fclose(f);
       memcpy(yl_mainloop,old_mainloop,sizeof(jmp_buf));
@@ -1734,6 +1736,22 @@ static cell* bi_loadS(const int n){
   return load(name,report);
 }
 
+static cell* bi_outputS(const int n){
+  CHECK1PRMN(n,"output");
+  cell* name=yl_stk[yl_sp-1];
+  if (name==0) {
+	if (yl_stdout!=stdout) fclose(yl_stdout);
+	yl_stdout=stdout;
+	return t_atom;
+  }
+  FILE* f=0;
+  if (is_sym(name)) f=fopen(name->sym,"w");
+  else if (is_str(name)) f=fopen(name->str,"w");
+  if (!f) yl_lerror_s(LISP_ERROR,"unable to open file %s",(is_sym(name)?name->sym:name->str));
+  yl_stdout=f;
+  return t_atom;
+}
+	
 #ifdef _WIN32
 #include <windows.h>
 //extern unsigned long GetTickCount();
@@ -2055,7 +2073,7 @@ static cell* apply_cons(cell* fn,cell* x,cell* a){
 
 static inline cell* apply(cell* fn,cell* x,cell* a) {
   CHECKFREECELL(fn)
-	//printf("apply:");print_sexpr(fn,1);printf(" args:");print_sexpr(x,1);printf(" env:");print_sexpr(a,1);printf("\n");
+	//printf("apply:");print_sexpr(stdout,fn,1);printf(" args:");print_sexpr(stdout,x,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
   CHECK_0(!fn,LISP_ERROR,"\"nil\" is not a function");
   return apply_by_type[(int)(fn->type)](fn,x,a);
 }
@@ -2063,7 +2081,7 @@ static inline cell* apply(cell* fn,cell* x,cell* a) {
 static cell* eval(cell* e,cell* a) {
   CHECKFREECELL(e)
   CHECKFREECELL(a)
-  //printf("eval ");print_sexpr(e,1);printf(" env:");print_sexpr(a,1);printf("\n");
+  //printf("eval ");print_sexpr(stdout,e,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
 #ifdef TAILCALL
   tail_call:
 #endif
@@ -2126,7 +2144,7 @@ static cell* eval(cell* e,cell* a){
   push(x);
   push(fn);
   apply:
-  //printf("apply:");print_sexpr(fn,1);printf(" ");print_sexpr(a,1);printf("\n");
+  //printf("apply:");print_sexpr(stdout,fn,1);printf(" ");print_sexpr(stdout,a,1);printf("\n");
   CHECK_0(!fn,LISP_ERROR,"\"nil\" is not a function");
   goto *apply_jump[(int)fn->type];
   apply_builtinlambda: n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinlambda(n,a),n);goto exit;
@@ -2368,7 +2386,7 @@ static int yl_init(){
     mk_builtinMacro("env",bi_env);mk_builtinStack("gc",bi_gcS);
     mk_builtinMacro("prog1",bi_prog1);mk_builtinMacro("progn",bi_progn);mk_builtinMacro("while",bi_while);
     mk_builtinMacro("do",bi_do);mk_builtinMacro("dotimes",bi_dotimes);mk_builtinMacro("dolist",bi_dolist);
-    mk_builtinStack("load",bi_loadS);
+    mk_builtinStack("load",bi_loadS);mk_builtinStack("output",bi_outputS);
     mk_builtinMacro("time",bi_time);mk_builtinStack("millisec",bi_millisecS);
     mk_builtinLambda("filter",bi_filter);mk_builtinLambda("map",bi_map);mk_builtinLambda("mapcar",bi_mapcar);
     mk_builtinStack("list",bi_listS);mk_builtinStack("list*",bi_listpS);mk_builtinStack("append",bi_appendS);
@@ -2392,6 +2410,7 @@ static void yl_bye(){
 #ifdef DEBUG_GC
   yl_stopping=1;
 #endif // DEBUG_GC
+  if (yl_stdout!=stdout) fclose(yl_stdout);
   cellsBlock *cb=yl_fcb;
   int i;
   cell* c;
@@ -2432,6 +2451,7 @@ int yl_replstarttime;
 int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
+  yl_stdout=stdout;
   printf("\n    \\/octoLISP\n ---/------------\n0.9.24 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
@@ -2471,7 +2491,7 @@ int main(int argc,char* argv[]){
       printf("\n> ");
       input=read_sexpr(stdin);START_EVAL_TIME;
       res=eval(input,0);PRINT_EVAL_TIME;
-      print_sexpr(res,1); //read, eval and print an s-expression
+      print_sexpr(stdout,res,1); //read, eval and print an s-expression
       if (yl_sp!=0) printf("gc error bad stack pointer %i\n",yl_sp);
     } else if (lj==BYE_JMP)
       stop=1;
