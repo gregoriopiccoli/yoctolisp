@@ -11,10 +11,10 @@
 (defun print-env(e)(if (null e) t (progn (print-env-elem (car e)) (print-env (cdr e)))))
 
 (defun print-env-elem(e)(cond
-  ((atom (cdr e)) (princln (list 'setq (car e) (cdr e))))
+  ((atom (cdr e)) (println (list 'setq (car e) (cdr e))))
   ((eq (cadr e) lambda) (print-lam-mac e))
   ((eq (cadr e)  macro) (print-lam-mac e)) 
-  (t (princln (list 'setq (car e) (list 'quote (cdr e)))))
+  (t (println (list 'setq (car e) (list 'quote (cdr e)))))
 ))
 
 ; stampa una lambda o una macro, se c'è la closure è una setq altrimenti una defun/defmacro
@@ -23,7 +23,7 @@
       (clo (cddddr e))
    )
    (cond 
-     ((atom clo) (princln (list (if (eq typ lambda) 'defun 'defmacro) (car e) (caddr e) (cadddr e))))
-     (t (princln (list 'setq (car e) (list 'quote (cdr e)))))
+     ((atom clo) (println (list (if (eq typ lambda) 'defun 'defmacro) (car e) (caddr e) (cadddr e))))
+     (t (println (list 'setq (car e) (list 'quote (cdr e)))))
 )))
        

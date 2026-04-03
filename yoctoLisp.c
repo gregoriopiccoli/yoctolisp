@@ -1348,7 +1348,10 @@ static cell* bi_let(cell* x,cell* a){
       } else {
         cell* n=car(car_l);
         cell* v=eval(car(car_l->cdr),a); // this is for let, using "na" implements "let*"
-        na=swp(mk_cons(mk_cons(n,v),na));
+        if (n->str[0]='#') 
+          yl_stk[current_stackbase+n->str[1]-'A']=v;
+        else 
+          na=swp(mk_cons(mk_cons(n,v),na));
       }
       l=l->cdr;
     }
