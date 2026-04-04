@@ -1244,6 +1244,11 @@ static cell* bi_quote(cell* x,cell* a){
 }
 
 static cell* bi_cond(cell* x,cell* a){
+  /*
+     Implementazione della funzione lisp "cond"
+     
+     (cond ((test1 val1)(test2 val2) ... (testn valn) [(else val_else)] )
+  */
   while(x){ //ATTENZIONE:  questa versione di cond torna NIL se nessun caso è vero (come common lisp)
 #ifdef TAILCALL
     if (car(car(x))==else_atom) return mk_trampoline(car(x->car->cdr), a);
@@ -1258,10 +1263,16 @@ static cell* bi_cond(cell* x,cell* a){
 }
 
 static cell* bi_let(cell* x,cell* a){
+  /* 
+     Implementazione della funzione lisp "let", con la named let da scheme.
+     
+     let: (let ((x 1) (y 2)) body...) - let* semantics (bindings evaluated in order)
+     named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function 
+  */
   cell* res=push(a);
   cell* na=push(a);
   if (x && atom(x->car)) {
-    // named let
+    /* named let */
     CHECKNPRM(x,3,3,"named let");
     cell* l=car(x);
     if (!is_sym(l)) yl_lerror(LISP_ERROR,"named let requires a symbol");
@@ -1279,7 +1290,7 @@ static cell* bi_let(cell* x,cell* a){
     l=car(x->cdr);
     while (l) {
       cell* car_l=car(l);
-      if (atom(car_l)){  // sintassi che dichiara variabili messe a nil ...
+      if (atom(car_l)){  // variabili non inizializzate (nil) - named let
         na=swp(mk_cons(mk_cons(car_l,0),na));
         // func version
         loopfnprms->cdr=mk_cons(car_l,0);
@@ -1309,11 +1320,13 @@ static cell* bi_let(cell* x,cell* a){
     na=swp(mk_cons(mk_cons(loopname,loopfn),na));
     //print_sexpr(stdout,na,1);printf("\n");
     //
+    /* esecuzione loop named let: eval body, se risultato inizia con loop_sym → ricorsione */
     int loop=1;
     cell* fn=curr_fn;
     while (loop) {
       res=pop2(cdr(x->cdr)?eval(car(x->cdr->cdr),na):0);
       if (res && is_cons(res) && car(res)==loop_sym) {
+        /* ricorsione: aggiorna binding con nuovi valori */
         res=push(cdr(res));
         na=push(basea);
         l=car(x->cdr);
@@ -1338,18 +1351,18 @@ static cell* bi_let(cell* x,cell* a){
     curr_fn=fn;
     return res;
   } else {
-    // let
+    /* let */
     CHECK2PRM(x,"let");
     cell* l=car(x);
     while (l){
       cell* car_l=car(l);
-      if (atom(car_l)){  // sintassi che dichiara variabili messe a nil ...
+      if (atom(car_l)){  // variabile non inizializzata → nil
         na=swp(mk_cons(mk_cons(car_l,0),na));
       } else {
         cell* n=car(car_l);
-        cell* v=eval(car(car_l->cdr),a); // this is for let, using "na" implements "let*"
-        if (n->str[0]='#') 
-          yl_stk[current_stackbase+n->str[1]-'A']=v;
+        cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
+        if (n->str[0]=='#') 
+          yl_stk[current_stackbase+n->str[1]-'A']=v;  // variabile speciale #A-#Z
         else 
           na=swp(mk_cons(mk_cons(n,v),na));
       }
@@ -1360,7 +1373,7 @@ static cell* bi_let(cell* x,cell* a){
 #else
     return pop2(cdr(x)?eval(car(x->cdr),na):0);
 #endif
-	}
+  }
 }
 
 static cell* bi_do(cell* x,cell* a){
