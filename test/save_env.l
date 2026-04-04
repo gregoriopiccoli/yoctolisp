@@ -11,7 +11,8 @@
 (defun print-env(e)(if (null e) t (progn (print-env-elem (car e)) (print-env (cdr e)))))
 
 (defun print-env-elem(e)(cond
-  ((atom (cdr e)) (println (list 'setq (car e) (cdr e))))
+  ;((atom (cdr e)) (println (list 'setq (car e) (list 'quote (cdr e)))))
+  ((atom (cdr e)) (println (list 'setq (car e) (if (symp (cdr e)) (list 'quote (cdr e)) (cdr e)) )))
   ((eq (cadr e) lambda) (print-lam-mac e))
   ((eq (cadr e)  macro) (print-lam-mac e)) 
   (t (println (list 'setq (car e) (list 'quote (cdr e)))))
