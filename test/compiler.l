@@ -21,7 +21,7 @@
   (let ((compiled-let-vars (compile-let-asgn (cadr let-expr) v cnt)))     
      (if (= :not-compilable compiled-let-vars) 
         :not-compilable
-        (let((compiled-let-body (compile-body (cddr let-expr) v cnt)))
+        (let ((compiled-let-body (compile-body (cddr let-expr) (append (make-let-assoc (cadr let-expr) compiled-let-vars) v) (+ cnt 1)))) ; !!!!! 
            (if (= :not-compilable compiled-let-body)
               :not-compilable
               (cons 'let (cons compiled-let-vars compiled-let-body))
@@ -33,19 +33,30 @@
 
 (defun compile-let-asgn(let-vars v cnt)
   (if (null let-vars) 
-     nil                                                                  ; ricorsione, è arrivato alla fine della lista delle variabili
-     (let((let-expr (compile-body (cdar let-vars) v cnt)))
+     nil                                                       ; ricorsione, è arrivato alla fine della lista delle variabili
+     (let((let-expr (compile-body (cdar let-vars) v cnt))      ; compila il corpo dell'assegnazione, attenzione che cambia cnt
+          (new-cnt (+ cnt (count-let-vars (cdar let-vars))) )) ; calcola quante variabili sono già state usate dall'espressione di calcolo per l'assegnazione
         (if (= :not-compilable let-expr)
            :not-compilable
-           (let((let-asgn-rest (compile-let-asgn (cdr let-vars) v cnt)))
+           (let((let-asgn-rest (compile-let-asgn (cdr let-vars) v new-cnt)))         ; riceve la compilata di quelli che seguono
               (if (= :not-compilable let-asgn-rest)
                  :not-compilable
-                 (cons (cons (caar let-vars) let-expr) let-asgn-rest)
+                 (cons (cons (let-name let-vars new-cnt) let-expr) let-asgn-rest)    ; ricostruisce la lista delle variabili di let con i nuovi nomi
               )
            )
         )
      )          
   )   
+)
+
+(defun let-name(let-expr cnt) (n-name (+ cnt (len let-expr))))
+
+; funzione che data la lista delle let prima e dopo la trasformazione crea la lista da mettere nelle associazioni
+(defun make-let-assoc(let-before let-after)
+  (if (null let-before)
+    nil
+    (cons (cons (caar let-before)(caar let-after)) (make-let-assoc (cdr let-before) (cdr let-after)))
+  ) 
 )
 
 (defun o-compile-let(let-expr v cnt)
@@ -94,7 +105,9 @@
 (defun flatten-args-2(l) (if (atom l) (cons l nil) (cons (car l)(flatten-args-2 (cdr l)))))
 (defun args-num(args vararg)(* (len args) (if vararg -1 1)))
  
-(defun mk-assoc(l n)(if(null l)nil(cons(cons (car l) (nth n '(#A #B #C #D #E #F #G #H #I #J #K #L #M #N #O #P #Q #R #S #T #U #V #W #X #Y #Z)))(mk-assoc (cdr l)(+ n 1)))))
+(defun mk-assoc(l n)(if(null l)nil(cons(cons (car l) (n-name n))(mk-assoc (cdr l)(+ n 1)))))
+
+(defun n-name(n)(nth n '(#A #B #C #D #E #F #G #H #I #J #K #L #M #N #O #P #Q #R #S #T #U #V #W #X #Y #Z)))
 
 ; torna il numero di variabili da riservare nello stack per tutte le let presenti nel corpo della funzione
 (defun count-let-vars(body)(cond
