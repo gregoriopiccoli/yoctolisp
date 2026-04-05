@@ -25,8 +25,7 @@ garbage collector: mark-sweep.
 #include <time.h>
 
 // cose da fare:
-// test della memoria con memwatch
-// "save" per salvare lo stato corrente in forma caricabile da "load"
+// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" ATTENZIONE ora possono esserci errori gravi! es: (lambda(x)(let((x 0))x) non torna 0 ma il parametro x
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
 // provare a fare caricamenti di file da altre directory con altri "load" nestati
 // forse ho una strategia per le variabili locali: associare al simbolo una lista con valore e "transazione", all'entrata di funzioni si aumenta la "transazione" e si mette il valore, all'uscita si elimina la testa della lista
@@ -48,6 +47,8 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// test della memoria con memwatch
+// "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
 // fare "prog1", "rand", "randomize"
 // do con variabili senza esprssione di step e anche senza inializzazione (25/4/2020)
@@ -1377,7 +1378,7 @@ static cell* bi_let(cell* x,cell* a){
 }
 
 static cell* bi_do(cell* x,cell* a){
-	CHECKNPRM(x,2,3,"do");
+  CHECKNPRM(x,2,3,"do");
   cell* na=push(a);
   cell* do_vars=car(x);
   cell* do_test=car(car(x->cdr));
