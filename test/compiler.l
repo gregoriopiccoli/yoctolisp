@@ -21,7 +21,7 @@
   (let ((compiled-let-vars (compile-let-asgn (cadr let-expr) v cnt)))     
      (if (= :not-compilable compiled-let-vars) 
         :not-compilable
-        (let ((compiled-let-body (compile-body (cddr let-expr) (append (make-let-assoc (cadr let-expr) compiled-let-vars) v) (+ cnt (len (cadr let-expr)))))) ; !!!!! <--- qui si deve aggiungere il numero giusto
+        (let ((compiled-let-body (compile-body (cddr let-expr) (append (make-let-assoc (cadr let-expr) compiled-let-vars) v) (+ cnt (measure-vars (cadr let-expr)) )))) ; ! <--- qui si deve aggiungere il numero giusto
            (if (= :not-compilable compiled-let-body)
               :not-compilable
               (cons 'let (cons compiled-let-vars compiled-let-body))
@@ -49,7 +49,15 @@
   )   
 )
 
-(defun let-name(let-expr cnt) (n-name (+ cnt (len let-expr))))
+(defun let-name(let-expr cnt) (n-name (+ (- cnt 1) (len let-expr))))
+
+; calcola quante variabili ha usato la parte che definisce le variabili di let
+(defun measure-vars(let-vars)
+  (if (null let-vars) 
+     0
+     (+ 1 (count-let-vars (cadar let-vars)) (measure-vars (cdr let-vars))) 
+  )   
+)
 
 ; funzione che data la lista delle let prima e dopo la trasformazione crea la lista da mettere nelle associazioni
 (defun make-let-assoc(let-before let-after)
