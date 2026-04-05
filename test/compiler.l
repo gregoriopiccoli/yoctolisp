@@ -6,7 +6,7 @@
   ((= 'let (car l))(compile-let l v cnt))
   (t(let(
       (p1 (compile-body(car l) v cnt))
-      (p2 (compile-body(cdr l) v cnt)))
+      (p2 (compile-body(cdr l) v (+ cnt (count-let-vars (car l))))))
     (if(or(= p1 :not-compilable)(= p2 :not-compilable))
       :not-compilable
       (cons p1 p2)
