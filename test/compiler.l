@@ -21,7 +21,7 @@
   (let ((compiled-let-vars (compile-let-asgn (cadr let-expr) v cnt)))     
      (if (= :not-compilable compiled-let-vars) 
         :not-compilable
-        (let ((compiled-let-body (compile-body (cddr let-expr) (append (make-let-assoc (cadr let-expr) compiled-let-vars) v) (+ cnt 1)))) ; !!!!! 
+        (let ((compiled-let-body (compile-body (cddr let-expr) (append (make-let-assoc (cadr let-expr) compiled-let-vars) v) (+ cnt (len (cadr let-expr)))))) ; !!!!! <--- qui si deve aggiungere il numero giusto
            (if (= :not-compilable compiled-let-body)
               :not-compilable
               (cons 'let (cons compiled-let-vars compiled-let-body))
