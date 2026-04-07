@@ -2,7 +2,9 @@
 (defun compile-body(l v cnt)(cond
   ((null l) nil)
   ((eq l 'lambda) :not-compilable)
+  ((eq l 'do)     :not-compilable)
   ((atom l)(let((p (assoc l v)))(if(null p) l (cdr p))))
+  ((and(eq 'let (car l))(atom (cadr l))) :not-compilable) ; named let
   ((= 'let (car l))(compile-let l v cnt))
   (t(let(
       (p1 (compile-body(car l) v cnt))

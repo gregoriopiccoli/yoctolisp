@@ -25,7 +25,8 @@ garbage collector: mark-sweep.
 #include <time.h>
 
 // cose da fare:
-// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" ATTENZIONE ora possono esserci errori gravi! es: (lambda(x)(let((x 0))x) non torna 0 ma il parametro x
+// compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
+// assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
 // provare a fare caricamenti di file da altre directory con altri "load" nestati
 // forse ho una strategia per le variabili locali: associare al simbolo una lista con valore e "transazione", all'entrata di funzioni si aumenta la "transazione" e si mette il valore, all'uscita si elimina la testa della lista
@@ -47,6 +48,7 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" ATTENZIONE ora possono esserci errori gravi! es: (lambda(x)(let((x 0))x) non torna 0 ma il parametro x
 // test della memoria con memwatch
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
@@ -2368,7 +2370,7 @@ static int yl_init(){
     apply_by_type[TYPE_CXR]=&apply_cxr;
     apply_by_type[TYPE_CONS]=&apply_cons;
     apply_by_type[TYPE_FREE]=&apply_error;
-		apply_by_type[TYPE_LETLOOP]=&apply_letloop;
+	apply_by_type[TYPE_LETLOOP]=&apply_letloop;
     applycons_by_type[LT_NOLAMBDA]=&apply_nolambdatype;
     applycons_by_type[LT_LAMBDA]=&apply_lambdatype;
     applycons_by_type[LT_MACRO]=&apply_macrotype;
@@ -2413,7 +2415,7 @@ static int yl_init(){
     mk_builtinStack("nump",bi_numpS);mk_builtinStack("strp",bi_strpS);mk_builtinStack("symp",bi_sympS);mk_builtinStack("celltype",bi_celltypeS);
     mk_builtinStack("rplaca",bi_rplacaS);mk_builtinStack("rplacd",bi_rplacdS);
     mk_builtinStack("len",bi_lenS);mk_builtinStack("substr",bi_substrS);mk_builtinStack("at",bi_atS);mk_builtinStack("nth",bi_nthS);
-		mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
+	mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
     load(mk_str("system.yl"),0);
     res=1;
   } else {
