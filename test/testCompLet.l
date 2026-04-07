@@ -25,6 +25,10 @@
 (defun let12(x)(+ (let((x 10))x) (let((y 100))y) x))
 (compile 'let12)
 
+(defun let13(x)(let(y)(progn(setq y 100)(+ x y))))
+(defun let14(x)(let(y)(progn(setq y 100)(+ x y))))
+(compile 'let14)
+
 ; -- test suite --
 (test-suite "-- Compiled let test suite --"
 
@@ -35,6 +39,7 @@
   (test (let7 1) (let8 1) "test compiled let 7-8")
   (test (let9 1) (let10 1) "test compiled let 9-10")
   (test (let11 1) (let12 1) "test compiled let 11-12")
+  (test (let13 1) (let14 1) "test compiled let 13-14")
 
   (test (count-let-vars '(let ((x 1)(y 2)) x)) 2 "test let 1")
   (test (count-let-vars '(let ((x 1)) (let((y 2)) x))) 2 "test let 2")

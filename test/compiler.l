@@ -3,7 +3,7 @@
   ((null l) nil)
   ((eq l 'lambda) :not-compilable)
   ((eq l 'do)     :not-compilable)
-  ((atom l)(let((p (assoc l v)))(if(null p) l (cdr p))))
+  ((atom l)        (let((p (assoc l v)))(if(null p) l (cdr p))))
   ((and(eq 'let (car l))(atom (cadr l))) :not-compilable) ; named let
   ((= 'let (car l))(compile-let l v cnt))
   (t(let(
@@ -36,17 +36,27 @@
 (defun compile-let-asgn(let-vars v cnt)
   (if (null let-vars) 
      nil                                                       ; ricorsione, è arrivato alla fine della lista delle variabili
-     (let((let-expr (compile-body (cdar let-vars) v cnt))      ; compila il corpo dell'assegnazione, attenzione che cambia cnt
-          (new-cnt (+ cnt (count-let-vars (cdar let-vars))) )) ; calcola quante variabili sono già state usate dall'espressione di calcolo per l'assegnazione
-        (if (= :not-compilable let-expr)
-           :not-compilable
-           (let((let-asgn-rest (compile-let-asgn (cdr let-vars) v new-cnt)))         ; riceve la compilata di quelli che seguono
-              (if (= :not-compilable let-asgn-rest)
-                 :not-compilable
-                 (cons (cons (let-name let-vars new-cnt) let-expr) let-asgn-rest)    ; ricostruisce la lista delle variabili di let con i nuovi nomi
-              )
-           )
+     (if (atom (car let-vars))
+        ; let del tipo "var"
+        (let((let-asgn-rest (compile-let-asgn (cdr let-vars) v cnt)))         ; riceve la compilata di quelli che seguono
+          (if (= :not-compilable let-asgn-rest)
+             :not-compilable
+             (cons (let-name let-vars cnt) let-asgn-rest)    ; ricostruisce la lista delle variabili di let con i nuovi nomi
+          )
         )
+        ; let del tipo "(var expr)"
+        (let((let-expr (compile-body (cdar let-vars) v cnt))      ; compila il corpo dell'assegnazione, attenzione che cambia cnt
+             (new-cnt (+ cnt (count-let-vars (cdar let-vars))) )) ; calcola quante variabili sono già state usate dall'espressione di calcolo per l'assegnazione
+          (if (= :not-compilable let-expr)
+             :not-compilable
+             (let((let-asgn-rest (compile-let-asgn (cdr let-vars) v new-cnt)))         ; riceve la compilata di quelli che seguono
+                (if (= :not-compilable let-asgn-rest)
+                   :not-compilable
+                   (cons (cons (let-name let-vars new-cnt) let-expr) let-asgn-rest)    ; ricostruisce la lista delle variabili di let con i nuovi nomi
+                )
+             )
+          )
+        )  
      )          
   )   
 )
@@ -54,22 +64,24 @@
 (defun let-name(let-expr cnt) (n-name (+ (- cnt 1) (len let-expr))))
 
 ; calcola quante variabili ha usato la parte che definisce le variabili di let
-(defun measure-vars(let-vars)
-  (if (null let-vars) 
-     0
-     (+ 1 (count-let-vars (cadar let-vars)) (measure-vars (cdr let-vars))) 
-  )   
-)
+(defun measure-vars(let-vars)(cond
+  ((null let-vars) 0)
+  ((atom (car let-vars)) (+ 1 (measure-vars (cdr let-vars))))
+  (t (+ 1 (count-let-vars (cadar let-vars)) (measure-vars (cdr let-vars)))) 
+))
 
 ; funzione che data la lista delle let prima e dopo la trasformazione crea la lista da mettere nelle associazioni
 (defun make-let-assoc(let-before let-after)
   (if (null let-before)
     nil
-    (cons (cons (caar let-before)(caar let-after)) (make-let-assoc (cdr let-before) (cdr let-after)))
+    (if (atom (car let-before))
+      (cons (cons (car let-before)(car let-after)) (make-let-assoc (cdr let-before) (cdr let-after)))
+      (cons (cons (caar let-before)(caar let-after)) (make-let-assoc (cdr let-before) (cdr let-after)))
+    )  
   ) 
 )
 
-(defun o-compile-let(let-expr v cnt)
+(defun old-compile-let(let-expr v cnt)
   (let ((let-body (compile-body (caddr let-expr) v cnt))
         (let-vars (compile-let-asgn (cadr let-expr) v cnt)))
    (progn
@@ -82,7 +94,7 @@
   ))  
 )
   
-(defun o-compile-let-asgn(let-vars v cnt)
+(defun old-compile-let-asgn(let-vars v cnt)
   (if(null let-vars) 
     nil
    (let ((body (compile-body (cadar let-vars) v cnt)))
@@ -125,9 +137,10 @@
   ((eq 'let (car body)) (+ (count-let-vars-list (cadr body)) (count-let-vars(cddr body))) )
   (t (+ (count-let-vars(car body)) (count-let-vars (cdr body))))
 ))
-
+     
 (defun count-let-vars-list(vlist)(cond
   ((null vlist) 0)
+  ((atom (car vlist))(+ 1 (count-let-vars-list (cdr vlist))))
   (t (+ 1 (count-let-vars (cdar vlist)) (count-let-vars-list (cdr vlist))))
 ))
 
