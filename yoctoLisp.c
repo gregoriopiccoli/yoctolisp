@@ -2062,7 +2062,8 @@ static cell* apply_stacklambdatype(cell* fn,cell* x,cell* a){
   int save_base=current_stackbase;
   current_stackbase=lsp;
   CHECK_S(nparms!=n,LISP_ERROR,"\"%s\" wrong number of parameters",curr_fn->str);
-  yl_sp+=stackspace;
+  // crea lo spazio per le variabili locali e le inizializza a nil per non avere problemi di GC
+  int i;for(i=0;i<stackspace;i++) yl_stk[yl_sp++]=0;
   return popstackbase(popn(eval(car(cdr(cdr(fn))),get_closure(fn,a)),n+stackspace+rest),save_base);
 }
 
@@ -2077,7 +2078,8 @@ static cell* apply_stacklambdalaptype(cell* fn,cell* x,cell* a){
   }
   n=evstackcnt(x,a,nparms,rest);
   CHECK_S(nparms!=n,LISP_ERROR,"\"%s\" wrong number of parameters",curr_fn->str);
-  yl_sp+=stackspace;
+  // crea lo spazio per le variabili locali e le inizializza a nil per non avere problemi di GC
+  int i;for(i=0;i<stackspace;i++) yl_stk[yl_sp++]=0;
   return popn(lap(car(cdr(cdr(fn))),get_closure(fn,a),yl_sp-n),n+stackspace+rest);
 }
 
