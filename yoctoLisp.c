@@ -25,20 +25,16 @@ garbage collector: mark-sweep.
 #include <time.h>
 
 // cose da fare:
-// compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
 // assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
 // provare a fare caricamenti di file da altre directory con altri "load" nestati
-// forse ho una strategia per le variabili locali: associare al simbolo una lista con valore e "transazione", all'entrata di funzioni si aumenta la "transazione" e si mette il valore, all'uscita si elimina la testa della lista
 // sistemare il parser per il caso xx:yy:zz ... ora separa ma poi perde i :
 // named let quando non è tail call, dilemma: così com'è non è quella di scheme ed ha un gran senso come "tail call" ... ma è totalmente fuori standard e non controllabile
 // garbage collector senza mark e full ... dal test sembra più veloce!
 // compilatore per #lap e #lambdalap
 // fare parametri non valutati @x ?
-// fare i parametri #0 con chiamata builtin?
 // catch - throw - finally
 // fare native: last, fold, reduce
-// eliminare la sintassi #0 ... e puntare tutto su #lap?
 // istruzione "case"
 // cambiare da macro a ... come chiamare le fexpr?
 // input da stringa
@@ -48,7 +44,8 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
-// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" ATTENZIONE ora possono esserci errori gravi! es: (lambda(x)(let((x 0))x) non torna 0 ma il parametro x
+// compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
+// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" 
 // test della memoria con memwatch
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
@@ -61,6 +58,7 @@ garbage collector: mark-sweep.
 // "let" senza inizializzazione (20/04/2020)
 
 // cose scartate:
+// forse ho una strategia per le variabili locali: associare al simbolo una lista con valore e "transazione", all'entrata di funzioni si aumenta la "transazione" e si mette il valore, all'uscita si elimina la testa della lista
 // stampare in modo diverso le builtin (oggi ripetono il simbolo) -- provato, ma poi si vedono malissimo le funzioni che espongono il tipo dei simboli!
 // garbage collector parallelo -- provato, ma rallenta!
 // eliminare *plist* da system.yl -- non disturba ...
@@ -105,12 +103,12 @@ typedef struct cell {
         struct cell* globalvalue;
       };
     };
-		/* lavoro da fare ... float e long
+	/* lavoro da fare ... float e long
     union {
       double dvalue;
       long long int lvalue;
     } numV;
-		*/
+	*/
   };
 #ifdef DEBUG_GC
     struct cell* free_cells;
@@ -1364,7 +1362,7 @@ static cell* bi_let(cell* x,cell* a){
       } else {
         cell* n=car(car_l);
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
-        if (n->str[0]=='#') 
+        if (n->sym[0]=='#') 
           yl_stk[current_stackbase+n->str[1]-'A']=v;  // variabile speciale #A-#Z
         else 
           na=swp(mk_cons(mk_cons(n,v),na));
@@ -1380,6 +1378,14 @@ static cell* bi_let(cell* x,cell* a){
 }
 
 static cell* bi_do(cell* x,cell* a){
+  /* do: (do ((var init [step]) ...) (test result) body...)
+     Costrutto di iterazione generico con variabili locali.
+     - var: variabile con valore iniziale opzionale step
+     - test: condizione di terminazione (quando vera esce)
+     - result: valore di ritorno
+     - body: eseguito ad ogni iterazione
+     Esempio: (do ((i 0 (+ i 1))) ((>= i 3) i) (print i))
+  */
   CHECKNPRM(x,2,3,"do");
   cell* na=push(a);
   cell* do_vars=car(x);
@@ -1483,6 +1489,11 @@ static cell* bi_reverseS(const int n){
 }
 
 static cell* bi_removeS(const int n){
+  /* remove: (remove item lst)
+     Rimuove tutti gli elementi uguali a item da lst (usando eq).
+     Restituisce una nuova lista senza gli elementi rimossi.
+     Esempio: (remove 2 '(1 2 3 2 4)) -> (1 3 4)
+  */
   CHECK2PRMN(n,"remove");
   cell* x=yl_stk[yl_sp-2];
   cell* l=yl_stk[yl_sp-1];
@@ -1498,6 +1509,11 @@ static cell* bi_removeS(const int n){
 }
 
 static cell* bi_prog1(cell* x,cell* a){
+  /* prog1: (prog1 expr1 expr2 ... exprn)
+     Valuta ogni espressione in sequenza e restituisce il risultato della prima.
+     Usato quando servono effetti collaterali ma il risultato deve essere quello iniziale.
+     Esempio: (prog1 (set x 2) (set x 10)) -> 2 (x diventa 10)
+  */
   cell* first=0;
   if (x && car(x)) {
 	  first=eval(x->car,a);
@@ -1511,6 +1527,11 @@ static cell* bi_prog1(cell* x,cell* a){
 }
 
 static cell* bi_progn(cell* x,cell* a){
+  /* progn: (progn expr1 expr2 ... exprn)
+     Valuta ogni espressione in sequenza e restituisce il risultato dell'ultima.
+     Usato per raggruppare più espressioni dove ne serve una sola.
+     Esempio: (progn (set x 1) (set y 2) (+ x y)) -> 3
+  */
   cell* last=0;
   while (x){
 #ifdef TAILCALL
@@ -1524,6 +1545,11 @@ static cell* bi_progn(cell* x,cell* a){
 }
 
 static cell* bi_while(cell* x,cell* a){
+  /* while: (while cond [result] body...)
+     Ciclo condizionale: esegue body finché cond è vera.
+     Se specificato, result è il valore di ritorno.
+     Esempio: (while (< i 3) (print (set i (+ i 1))))
+  */
   CHECKNPRM(x,2,3,"while");
   cell* cond=car(x);
   cell* body=car(x->cdr);
@@ -1538,7 +1564,12 @@ static cell* bi_while(cell* x,cell* a){
 }
 
 static cell* bi_if(cell* x,cell* a){
-	CHECKNPRM(x,2,3,"if");
+ 	/* if: (if cond then-expr [else-expr])
+     Costrutto condizionale base: se cond è vera esegue then-expr,
+     altrimenti esegue else-expr (opzionale,default nil).
+     Esempio: (if (> 3 2) 'maggiore 'minore)
+  */
+  CHECKNPRM(x,2,3,"if");
   if (eval(car(x),a))
 #ifdef TAILCALL
     return mk_trampoline(car(x->cdr),a);
@@ -1554,6 +1585,12 @@ static cell* bi_if(cell* x,cell* a){
 }
 
 static cell* bi_dotimes(cell* x,cell* a){
+  /* dotimes: (dotimes (var end [result]) body...)
+     Itera un numero fixed di volte (da 0 a end-1), eseguendo body per ogni iterazione.
+     La variabile var è settata al valore corrente dell'indice.
+     Alla fine, restituisce result (o nil se non specificato).
+     Esempio: (dotimes (i 3) (print i)) stampa 0 1 2
+  */
   cell* var=car(car(x));
   cell* endv=eval(car(cdr(x->car)),a);
   cell* res=x->car->cdr->cdr;
@@ -1578,6 +1615,11 @@ static cell* bi_dotimes(cell* x,cell* a){
 }
 
 static cell* bi_dolist(cell* x,cell* a){
+  /* dolist: (dolist (var list [result]) body...)
+     Itera su una lista, eseguendo body per ogni elemento.
+     Alla fine, restituisce result (o nil se non specificato).
+     Esempio: (dolist (x '(1 2 3)) (print x))
+  */
   cell* var=car(car(x));
   cell* res=x->car->cdr->cdr;
   if (!var || !is_sym(var)) yl_lerror(LISP_ERROR,"\"dolist\" var expected");
@@ -1600,6 +1642,11 @@ static cell* bi_dolist(cell* x,cell* a){
 }
 
 static cell* bi_map(const int n,cell* a){
+  /* map: (map fnc lst)
+     Applica fnc a ogni elemento di lst e restituisce una lista dei risultati non-nil.
+     Simile a mapcar ma filtra via i valori nil.
+     Esempio: (map (lambda(x) (if (> x 2) x)) '(1 2 3)) -> (3)
+  */
   CHECK2PRMN(n,"map");
   cell* fnc=yl_stk[yl_sp-2];
   cell* lst=yl_stk[yl_sp-1];
@@ -1618,6 +1665,11 @@ static cell* bi_map(const int n,cell* a){
 }
 
 static cell* bi_mapcar(const int n,cell* a){
+  /* mapcar: (mapcar fnc lst1 [lst2 ...])
+     Applica fnc a cada elemento di più liste e restituisce una lista dei risultati.
+     Le liste devono avere la stessa lunghezza.
+     Esempio: (mapcar (lambda(x y) (+ x y)) '(1 2) '(3 4)) -> (4 6)
+  */
   if (n>50) yl_lerror(LISP_ERROR,"\"mapcar\": function cannot have more than 50 args");
   cell* fncquotelist=push(mk_cons(yl_stk[yl_sp-n],0));
   cell* p=fncquotelist;
@@ -1650,6 +1702,11 @@ static cell* bi_mapcar(const int n,cell* a){
 }
 
 static cell* bi_filter(const int n,cell* a){
+  /* filter: (filter pred lst)
+     Filtra elementi di lst usando pred come predicato.
+     Restituisce una lista contenente solo gli elementi per cui pred ritorna non-nil.
+     Esempio: (filter (lambda(x) (> x 2)) '(1 2 3 4)) -> (3 4)
+  */
   CHECK2PRMN(n,"filter");
   cell* fnc=yl_stk[yl_sp-2];
   cell* lst=yl_stk[yl_sp-1];
@@ -1959,7 +2016,7 @@ static inline cell* pairlis(cell* x, cell* y,cell* a) {
 }
 
 static inline cell* assq_cdr(const cell* x,const cell* a) {
-  if (x->str[0]=='#') // gestione delle variabili locali nello stack
+  if (x->sym[0]=='#') // gestione delle variabili locali nello stack
     return yl_stk[current_stackbase+x->str[1]-'A'];
   // search in current environment
   while (a) {
@@ -2372,7 +2429,7 @@ static int yl_init(){
     apply_by_type[TYPE_CXR]=&apply_cxr;
     apply_by_type[TYPE_CONS]=&apply_cons;
     apply_by_type[TYPE_FREE]=&apply_error;
-	apply_by_type[TYPE_LETLOOP]=&apply_letloop;
+    apply_by_type[TYPE_LETLOOP]=&apply_letloop;
     applycons_by_type[LT_NOLAMBDA]=&apply_nolambdatype;
     applycons_by_type[LT_LAMBDA]=&apply_lambdatype;
     applycons_by_type[LT_MACRO]=&apply_macrotype;
@@ -2417,7 +2474,7 @@ static int yl_init(){
     mk_builtinStack("nump",bi_numpS);mk_builtinStack("strp",bi_strpS);mk_builtinStack("symp",bi_sympS);mk_builtinStack("celltype",bi_celltypeS);
     mk_builtinStack("rplaca",bi_rplacaS);mk_builtinStack("rplacd",bi_rplacdS);
     mk_builtinStack("len",bi_lenS);mk_builtinStack("substr",bi_substrS);mk_builtinStack("at",bi_atS);mk_builtinStack("nth",bi_nthS);
-	mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
+    mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
     load(mk_str("system.yl"),0);
     res=1;
   } else {
