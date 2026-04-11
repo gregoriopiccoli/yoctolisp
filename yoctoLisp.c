@@ -50,7 +50,8 @@ garbage collector: mark-sweep.
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
 // fare "prog1", "rand", "randomize"
-// do con variabili senza esprssione di step e anche senza inializzazione (25/4/2020)
+// do con variabili senza espressione di step e anche senza inializzazione (25/4/2020)
+// fatta label ((label ff (lambda(x)(if(atom x)x(ff(car x))))) '((1)))
 // controllo dei parametri in named let (25/4/2020)
 // stampa di strutture ricorsive (da rplaca) (22/04/2020)
 // "named let" come in scheme per iterazione semplificata (22/04/2020)
