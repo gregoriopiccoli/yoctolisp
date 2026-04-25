@@ -17,15 +17,15 @@
 ))
 
 (defun asm-funcall(e)(cond
-  ((= (car e) 'quote) (list :quote e)) 
+  ((= (car e) 'quote) (list :quote e)) ; qui c'è il punto da sviluppare ... come riesco a fare QUOTE??? fatto questo vengono le macro
   ((= (car e) 'if)    (asm-if e))
   ((= (car e) 'cond)  (list :cond e))
   (t (asm-funcprms (cdr e) (car e)))
 ))
 
 (defun asm-funcprms(prms fun)(cond
-  ((null prms) (list :call-fun fun))
-  (t (asm-funcprm (car prms)(cdr prms) fun))
+  ((null prms) (list :call-fun fun))          ; finiti i parametri chiama la funzione
+  (t (asm-funcprm (car prms)(cdr prms) fun))  ; 
 ))
 
 (defun asm-funcprm(p prms fun) (cons (asm p) (asm-funcprms prms fun)))
