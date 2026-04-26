@@ -50,7 +50,8 @@ garbage collector: mark-sweep.
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
 // fare "prog1", "rand", "randomize"
-// do con variabili senza esprssione di step e anche senza inializzazione (25/4/2020)
+// do con variabili senza espressione di step e anche senza inializzazione (25/4/2020)
+// fatta label ((label ff (lambda(x)(if(atom x)x(ff(car x))))) '((1)))
 // controllo dei parametri in named let (25/4/2020)
 // stampa di strutture ricorsive (da rplaca) (22/04/2020)
 // "named let" come in scheme per iterazione semplificata (22/04/2020)
@@ -725,13 +726,26 @@ static cell* bi_sympS(int n){
   return (x && (x->type==TYPE_SYM || x->type==TYPE_KEYWORD))?t_atom:0;
 }
 
+static cell* bi_hashsympS(int n){
+  CHECK1PRMN(n,"hashsymp");
+  const cell* x=yl_stk[yl_sp-1];
+  return (x && (x->type==TYPE_SYM || x->type==TYPE_KEYWORD))?(x->sym[0]=='#'?t_atom:0):0;
+}
+
 static cell* bi_celltypeS(int n){
   CHECK1PRMN(n,"celltype");
   const cell* x=yl_stk[yl_sp-1];
   if (x) return mk_num(x->type);
   return 0;
 }
-
+/*
+static cell* bi_lambdatypeS(int n){
+  CHECK1PRMN(n,"lambdatype");
+  const cell* x=yl_stk[yl_sp-1];
+  if (x) return mk_num(x->lambdatype);
+  return 0;
+}
+*/
 static cell* bi_rplacaS(int n){
   CHECK2PRMN(n,"rplaca");
   cell* c=yl_stk[yl_sp-2],*v=yl_stk[yl_sp-1];
@@ -2471,7 +2485,8 @@ static int yl_init(){
     mk_builtinStack("reverse",bi_reverseS);mk_builtinStack("remove",bi_removeS);
     mk_builtinStack("assoc",bi_assocS);mk_builtinStack("pairlis",bi_pairlisS);mk_builtinStack("member",bi_memberS);
     mk_builtinStack("lexical-scoping",bi_lexicalscopingS);mk_builtinStack("tail-call",bi_tailcallS);mk_builtinStack("error",bi_errorS);
-    mk_builtinStack("nump",bi_numpS);mk_builtinStack("strp",bi_strpS);mk_builtinStack("symp",bi_sympS);mk_builtinStack("celltype",bi_celltypeS);
+    mk_builtinStack("nump",bi_numpS);mk_builtinStack("strp",bi_strpS);mk_builtinStack("symp",bi_sympS);mk_builtinStack("hashsymp",bi_hashsympS);
+    mk_builtinStack("celltype",bi_celltypeS);/*mk_builtinStack("lambdatype",bi_lambdatypeS);*/
     mk_builtinStack("rplaca",bi_rplacaS);mk_builtinStack("rplacd",bi_rplacdS);
     mk_builtinStack("len",bi_lenS);mk_builtinStack("substr",bi_substrS);mk_builtinStack("at",bi_atS);mk_builtinStack("nth",bi_nthS);
     mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
