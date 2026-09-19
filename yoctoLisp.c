@@ -1171,7 +1171,7 @@ static cell* bi_printlnS(int n){return print(n,1,1);}
 static cell* bi_spacesS(int n){
   CHECK1PRMN(n,"spaces");
   cell* x=yl_stk[yl_sp-1];
-  if (x->type!=TYPE_NUM) yl_lerror(LISP_ERROR,"spaces requires a number as parameter.");
+  if (!x || x->type!=TYPE_NUM) yl_lerror(LISP_ERROR,"spaces requires a number as parameter.");
   int r=x->value,i;
   if (r<0) r=0;
   char *buff;
