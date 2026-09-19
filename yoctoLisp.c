@@ -610,7 +610,7 @@ static void print_sexpr(FILE* f,cell* c,int mode){
   if (!isStart && c && c->type==TYPE_CONS) { // è una chiamata ricorsiva, controlla che non sia già stato stampato
     ap=already_printed(c);
     if (ap){
-      printf(" #%d# ",ap);
+      fprintf(f," #%d# ",ap);
       return;
     }
   } else if (isStart){
@@ -1460,7 +1460,7 @@ static cell* bi_do(cell* x,cell* a){
   return pop(res);
 }
 
-static inline cell* append(cell* a,cell* b){ // da errore di segmentazione se non sono liste!!!
+static inline cell* append(cell* a,cell* b){ 
   if (!a) return b;
   if (!b) return a;
   push(b);
@@ -1609,7 +1609,7 @@ static cell* bi_dotimes(cell* x,cell* a){
   cell* endv=eval(car(cdr(x->car)),a);
   cell* res=x->car->cdr->cdr;
   if (!var || !is_sym(var)) yl_lerror(LISP_ERROR,"\"dotimes\" var expected");
-  if (!is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
+  if (!endv || !is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
   if (!atom(res)) res=res->car;
   int i,l=endv->value;
   cell* loopcounter=mk_num(0);
@@ -1685,6 +1685,7 @@ static cell* bi_mapcar(const int n,cell* a){
      Esempio: (mapcar (lambda(x y) (+ x y)) '(1 2) '(3 4)) -> (4 6)
   */
   if (n>50) yl_lerror(LISP_ERROR,"\"mapcar\": function cannot have more than 50 args");
+  if (n<=1) yl_lerror(LISP_ERROR, "\"mapcar\": function cannot have less than 1 args");
   cell* fncquotelist=push(mk_cons(yl_stk[yl_sp-n],0));
   cell* p=fncquotelist;
   cell* tmp;
@@ -1869,6 +1870,7 @@ static int getMillisec(){
 
 static cell* bi_time(cell* x, cell* a){
   int s=getMillisec();
+  if (!x) return mk_num(0);
   eval(car(x),a);
   return mk_num(getMillisec()-s);
 }
