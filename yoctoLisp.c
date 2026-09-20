@@ -353,6 +353,7 @@ static cell* mk_str(char* n){
   c->type=TYPE_STR;
   c->lambdatype=LT_NOLAMBDA;
   c->str=malloc(strlen(n)+1);
+  if (!c->str) yl_lerror(SYSTEM_ERROR,"memory exhausted");
   strcpy(c->str,n);
   return c;
 }
@@ -520,6 +521,7 @@ static int nexttoken(FILE *f){
     } else {
       do {
         token_text[i++]=c;
+        if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
         c = (char)fgetc(f);
       } while(issymchar(c));
       token_text[i]=0;
@@ -1176,6 +1178,7 @@ static cell* bi_spacesS(int n){
   if (r<0) r=0;
   char *buff;
   buff=malloc(r+1);
+  if (!buff) yl_lerror(SYSTEM_ERROR,"memory exhausted in spaces");
   for(i=0;i<r;i++) buff[i]=' ';
   buff[r]=0;
   cell* res=mk_str(buff);
@@ -2188,7 +2191,7 @@ static cell* eval(cell* e,cell* a) {
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return pop(make_closure(push(e),a));
+        return pop2(make_closure(push(e),push(a)));
       } else {
 #ifdef TAILCALL
         e=pop2(apply(push(e)->car,e->cdr,push(a)));
@@ -2223,7 +2226,7 @@ static cell* eval(cell* e,cell* a){
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return make_closure(e,a);
+        return pop2(make_closure(push(e),push(a));
       } else {
         fn=e->car;
         x=e->cdr;
