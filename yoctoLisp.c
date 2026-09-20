@@ -943,9 +943,9 @@ static cell* bi_notS(const int n){
 }
 
 static cell* bi_and(cell* x,cell* a){
-  cell* last=t_atom;
+  cell* last=t_atom; // valore che sarà tornato in caso di lista vuota
   while(x){
-    last=eval(car(x),a);
+    last=eval(car(x),a); // non occorre proteggere "last" perché viene tornata solo se non ci sono altre espressioni da valutare
     if(!last) return 0;
     x=x->cdr;
   }
@@ -1468,9 +1468,9 @@ static inline cell* append(cell* a,cell* b){
   cell* n=res;
   a=cdr(a);
   while (a){
+    if (a->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"append: first expression is not a list");
     rplacd(n,mk_cons(a->car,0));
     n=n->cdr;
-    if (a->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"append: first expression is not a list");
     a=a->cdr;
   }
   rplacd(n,b);
@@ -1528,16 +1528,16 @@ static cell* bi_prog1(cell* x,cell* a){
      Usato quando servono effetti collaterali ma il risultato deve essere quello iniziale.
      Esempio: (prog1 (set x 2) (set x 10)) -> 2 (x diventa 10)
   */
-  cell* first=0;
+  cell* first=push(0);
   if (x && car(x)) {
-	  first=eval(x->car,a);
+	  first=swp(eval(x->car,a));
 	  x=x->cdr;
 	}
   while (x) {
     eval(car(x),a);
     x=x->cdr;
   }
-  return first;
+  return pop(first);
 }
 
 static cell* bi_progn(cell* x,cell* a){
@@ -1546,16 +1546,16 @@ static cell* bi_progn(cell* x,cell* a){
      Usato per raggruppare più espressioni dove ne serve una sola.
      Esempio: (progn (set x 1) (set y 2) (+ x y)) -> 3
   */
-  cell* last=0;
+  cell* last=push(0);
   while (x){
 #ifdef TAILCALL
     if (!cdr(x)) // ultima espessione, si può fare un tampolino
-      return mk_trampoline(car(x),a);
+      return pop(mk_trampoline(car(x),a));
 #endif
-    last=eval(car(x),a);
+    last=swp(eval(car(x),a));
     x=x->cdr;
   }
-  return last;
+  return pop(last);
 }
 
 static cell* bi_while(cell* x,cell* a){
@@ -1940,7 +1940,7 @@ static cell* bi_gcS(const int n){
   acells=yl_nblocks*MAX_CELLS-fcells;
   asyms=(yl_nsymsblocks-1)*MAX_SYMS+yl_nsyms;
   if (n>0) printf("%i allocated cells, %i active cells, %i symbols, %i gc executions\n",yl_nblocks*MAX_CELLS,acells,asyms,yl_ngc);
-  return pop(mk_cons(push(mk_num(acells)),mk_num(yl_nblocks*MAX_CELLS)));
+  return pop2(mk_cons(push(mk_num(acells)),push(mk_num(yl_nblocks*MAX_CELLS))));
 }
 
 #ifdef LEXICAL_SCOPING
@@ -2188,7 +2188,7 @@ static cell* eval(cell* e,cell* a) {
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return make_closure(e,a);
+        return pop(make_closure(push(e),a));
       } else {
 #ifdef TAILCALL
         e=pop2(apply(push(e)->car,e->cdr,push(a)));
