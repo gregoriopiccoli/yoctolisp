@@ -23,6 +23,7 @@ garbage collector: mark-sweep.
 #include <setjmp.h>
 #include <math.h>
 #include <time.h>
+#include <limits.h>
 
 // cose da fare:
 // assembler per #lambdalap e #lap
@@ -45,7 +46,7 @@ garbage collector: mark-sweep.
 
 // cose fatte:
 // compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
-// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" 
+// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*"
 // test della memoria con memwatch
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
@@ -353,6 +354,7 @@ static cell* mk_str(char* n){
   c->type=TYPE_STR;
   c->lambdatype=LT_NOLAMBDA;
   c->str=malloc(strlen(n)+1);
+  if (!c->str) yl_lerror(SYSTEM_ERROR,"memory exhausted");
   strcpy(c->str,n);
   return c;
 }
@@ -513,19 +515,20 @@ static int nexttoken(FILE *f){
         c =(char)fgetc(f);
         token_text[i++]=c;
         if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
-      } while(c!='"' && c!='\n');
+      } while(c!='"' && c!='\n' && c!=EOF);
       token_text[i-1]=0;
-      if (c=='\n') yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
+      if (c=='\n' || c==EOF) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
       token=TOK_STR;
     } else {
       do {
         token_text[i++]=c;
+        if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
         c = (char)fgetc(f);
       } while(issymchar(c));
       token_text[i]=0;
       // controlla se + un numero
       char *e;
-      token_value = strtol(token_text, &e, 0);
+      token_value = strtol(token_text, &e, 10);
       if (*e == '\0') token = TOK_NUM;
       // ora devo preparare per il prossimo
       if (c==0 || c=='(' || c==')' || c=='.' || c=='\'') // || c==':') // devo decidere se : separa o no ...
@@ -610,7 +613,7 @@ static void print_sexpr(FILE* f,cell* c,int mode){
   if (!isStart && c && c->type==TYPE_CONS) { // è una chiamata ricorsiva, controlla che non sia già stato stampato
     ap=already_printed(c);
     if (ap){
-      printf(" #%d# ",ap);
+      fprintf(f," #%d# ",ap);
       return;
     }
   } else if (isStart){
@@ -871,6 +874,7 @@ static cell* bi_divS(int n){
   while (n){
     int p=get_num(yl_stk[yl_sp-n],"/");
     if (p==0) yl_lerror_s(LISP_ERROR,"%s: division by 0","/");
+    if (p==-1 && r==INT_MIN) yl_lerror_s(LISP_ERROR,"%s: division of INT_MIN by -1","/");
     r=r/p;
     n--;
   }
@@ -883,6 +887,7 @@ static cell* bi_modS(int n){
   while (n){
     int p=get_num(yl_stk[yl_sp-n],"%");
     if (p==0) yl_lerror_s(LISP_ERROR,"%s: division by 0","%");
+    if (p==-1 && r==INT_MIN) yl_lerror_s(LISP_ERROR,"%s: division of INT_MIN by -1","%");
     r=r%p;
     n--;
   }
@@ -903,7 +908,8 @@ static cell* bi_powS(int n){
 static cell* bi_addS(int n){
   char* add;
   char nbuff[20];
-  if (n && yl_stk[yl_sp-n] && yl_stk[yl_sp-n]->type==TYPE_NUM) return math_addS(n);
+  if (!n) return mk_num(0);
+  if (yl_stk[yl_sp-n] && yl_stk[yl_sp-n]->type==TYPE_NUM) return math_addS(n);
   int fixsp=yl_sp;
   char *newstr,*tmp,buff[100]; // un buffer statico per la maggior parte delle operazioni, diventa allocato dinamicamente se la nuova stringa è troppo lunga
   newstr=buff;
@@ -943,9 +949,9 @@ static cell* bi_notS(const int n){
 }
 
 static cell* bi_and(cell* x,cell* a){
-  cell* last=t_atom;
+  cell* last=t_atom; // valore che sarà tornato in caso di lista vuota
   while(x){
-    last=eval(car(x),a);
+    last=eval(car(x),a); // non occorre proteggere "last" perché viene tornata solo se non ci sono altre espressioni da valutare
     if(!last) return 0;
     x=x->cdr;
   }
@@ -1171,11 +1177,12 @@ static cell* bi_printlnS(int n){return print(n,1,1);}
 static cell* bi_spacesS(int n){
   CHECK1PRMN(n,"spaces");
   cell* x=yl_stk[yl_sp-1];
-  if (x->type!=TYPE_NUM) yl_lerror(LISP_ERROR,"spaces requires a number as parameter.");
+  if (!x || x->type!=TYPE_NUM) yl_lerror(LISP_ERROR,"spaces requires a number as parameter.");
   int r=x->value,i;
   if (r<0) r=0;
   char *buff;
   buff=malloc(r+1);
+  if (!buff) yl_lerror(SYSTEM_ERROR,"memory exhausted in spaces");
   for(i=0;i<r;i++) buff[i]=' ';
   buff[r]=0;
   cell* res=mk_str(buff);
@@ -1460,7 +1467,7 @@ static cell* bi_do(cell* x,cell* a){
   return pop(res);
 }
 
-static inline cell* append(cell* a,cell* b){ // da errore di segmentazione se non sono liste!!!
+static inline cell* append(cell* a,cell* b){ 
   if (!a) return b;
   if (!b) return a;
   push(b);
@@ -1468,9 +1475,9 @@ static inline cell* append(cell* a,cell* b){ // da errore di segmentazione se no
   cell* n=res;
   a=cdr(a);
   while (a){
+    if (a->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"append: first expression is not a list");
     rplacd(n,mk_cons(a->car,0));
     n=n->cdr;
-    if (a->type!=TYPE_CONS) yl_lerror(LISP_ERROR,"append: first expression is not a list");
     a=a->cdr;
   }
   rplacd(n,b);
@@ -1528,16 +1535,16 @@ static cell* bi_prog1(cell* x,cell* a){
      Usato quando servono effetti collaterali ma il risultato deve essere quello iniziale.
      Esempio: (prog1 (set x 2) (set x 10)) -> 2 (x diventa 10)
   */
-  cell* first=0;
+  cell* first=push(0);
   if (x && car(x)) {
-	  first=eval(x->car,a);
+	  first=swp(eval(x->car,a));
 	  x=x->cdr;
 	}
   while (x) {
     eval(car(x),a);
     x=x->cdr;
   }
-  return first;
+  return pop(first);
 }
 
 static cell* bi_progn(cell* x,cell* a){
@@ -1546,16 +1553,16 @@ static cell* bi_progn(cell* x,cell* a){
      Usato per raggruppare più espressioni dove ne serve una sola.
      Esempio: (progn (set x 1) (set y 2) (+ x y)) -> 3
   */
-  cell* last=0;
+  cell* last=push(0);
   while (x){
 #ifdef TAILCALL
     if (!cdr(x)) // ultima espessione, si può fare un tampolino
-      return mk_trampoline(car(x),a);
+      return pop(mk_trampoline(car(x),a));
 #endif
-    last=eval(car(x),a);
+    last=swp(eval(car(x),a));
     x=x->cdr;
   }
-  return last;
+  return pop(last);
 }
 
 static cell* bi_while(cell* x,cell* a){
@@ -1609,7 +1616,7 @@ static cell* bi_dotimes(cell* x,cell* a){
   cell* endv=eval(car(cdr(x->car)),a);
   cell* res=x->car->cdr->cdr;
   if (!var || !is_sym(var)) yl_lerror(LISP_ERROR,"\"dotimes\" var expected");
-  if (!is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
+  if (!endv || !is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
   if (!atom(res)) res=res->car;
   int i,l=endv->value;
   cell* loopcounter=mk_num(0);
@@ -1685,6 +1692,7 @@ static cell* bi_mapcar(const int n,cell* a){
      Esempio: (mapcar (lambda(x y) (+ x y)) '(1 2) '(3 4)) -> (4 6)
   */
   if (n>50) yl_lerror(LISP_ERROR,"\"mapcar\": function cannot have more than 50 args");
+  if (n<=1) yl_lerror(LISP_ERROR, "\"mapcar\": function cannot have less than 1 args");
   cell* fncquotelist=push(mk_cons(yl_stk[yl_sp-n],0));
   cell* p=fncquotelist;
   cell* tmp;
@@ -1869,6 +1877,7 @@ static int getMillisec(){
 
 static cell* bi_time(cell* x, cell* a){
   int s=getMillisec();
+  if (!x) return mk_num(0);
   eval(car(x),a);
   return mk_num(getMillisec()-s);
 }
@@ -1938,7 +1947,7 @@ static cell* bi_gcS(const int n){
   acells=yl_nblocks*MAX_CELLS-fcells;
   asyms=(yl_nsymsblocks-1)*MAX_SYMS+yl_nsyms;
   if (n>0) printf("%i allocated cells, %i active cells, %i symbols, %i gc executions\n",yl_nblocks*MAX_CELLS,acells,asyms,yl_ngc);
-  return pop(mk_cons(push(mk_num(acells)),mk_num(yl_nblocks*MAX_CELLS)));
+  return pop2(mk_cons(push(mk_num(acells)),push(mk_num(yl_nblocks*MAX_CELLS))));
 }
 
 #ifdef LEXICAL_SCOPING
@@ -2186,7 +2195,7 @@ static cell* eval(cell* e,cell* a) {
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return make_closure(e,a);
+        return pop2(make_closure(push(e),push(a)));
       } else {
 #ifdef TAILCALL
         e=pop2(apply(push(e)->car,e->cdr,push(a)));
@@ -2221,7 +2230,7 @@ static cell* eval(cell* e,cell* a){
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return make_closure(e,a);
+        return pop2(make_closure(push(e),push(a)));
       } else {
         fn=e->car;
         x=e->cdr;
