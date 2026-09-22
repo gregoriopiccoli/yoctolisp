@@ -674,10 +674,10 @@ static cell* lap(const cell* x,cell* a,const int stackbase);
 static cell* curr_fn;
 
 #ifdef SAFE_CXR
-int count_params(const cell* x){int n=0;while(x) {x=x->cdr;n++;};return n;}
 void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
 static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
 static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
+int count_params(const cell* x){int n=0;while(x) {x=cdr(x);n++;};return n;}
 void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
 void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
 static inline void CHECK1PRM(const cell* x,const char* m){if (count_params(x)!=1) wrongnparms(m);}
@@ -1224,7 +1224,7 @@ static cell* bi_listpS(int n){
 static int bye_value=0;
 
 static cell* bi_byeS(int n){
-	CHECKNPRMN(n,0,1,"bye");
+  CHECKNPRMN(n,0,1,"bye");
   cell* x=(n>0?yl_stk[yl_sp-n]:0);
   if (x && x->type==TYPE_NUM) bye_value=x->value;
   longjmp(yl_mainloop,BYE_JMP);
@@ -1261,7 +1261,8 @@ static cell* bi_apply(const int n,cell* a){
 }
 
 static cell* bi_quote(cell* x,cell* a){
-  CHECK1PRM(x,"quote");
+  //CHECK1PRM(x,"quote");
+  if (!x || x->type==TYPE_CONS && x->cdr) wrongnparms("quote");
   return car(x);
 }
 
