@@ -23,6 +23,7 @@ garbage collector: mark-sweep.
 #include <setjmp.h>
 #include <math.h>
 #include <time.h>
+#include <limits.h>
 
 // cose da fare:
 // assembler per #lambdalap e #lap
@@ -45,7 +46,7 @@ garbage collector: mark-sweep.
 
 // cose fatte:
 // compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
-// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*" 
+// compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*"
 // test della memoria con memwatch
 // "save" per salvare lo stato corrente in forma caricabile da "load": fatti "output" che dirige l'output verso un file, "save-env" e "save-defs"
 // fare la "else" in cond
@@ -514,9 +515,9 @@ static int nexttoken(FILE *f){
         c =(char)fgetc(f);
         token_text[i++]=c;
         if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
-      } while(c!='"' && c!='\n');
+      } while(c!='"' && c!='\n' && c!=EOF);
       token_text[i-1]=0;
-      if (c=='\n') yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
+      if (c=='\n' || c==EOF) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
       token=TOK_STR;
     } else {
       do {
@@ -527,7 +528,7 @@ static int nexttoken(FILE *f){
       token_text[i]=0;
       // controlla se + un numero
       char *e;
-      token_value = strtol(token_text, &e, 0);
+      token_value = strtol(token_text, &e, 10);
       if (*e == '\0') token = TOK_NUM;
       // ora devo preparare per il prossimo
       if (c==0 || c=='(' || c==')' || c=='.' || c=='\'') // || c==':') // devo decidere se : separa o no ...
@@ -873,6 +874,7 @@ static cell* bi_divS(int n){
   while (n){
     int p=get_num(yl_stk[yl_sp-n],"/");
     if (p==0) yl_lerror_s(LISP_ERROR,"%s: division by 0","/");
+    if (p==-1 && r==INT_MIN) yl_lerror_s(LISP_ERROR,"%s: division of INT_MIN by -1","/");
     r=r/p;
     n--;
   }
@@ -885,6 +887,7 @@ static cell* bi_modS(int n){
   while (n){
     int p=get_num(yl_stk[yl_sp-n],"%");
     if (p==0) yl_lerror_s(LISP_ERROR,"%s: division by 0","%");
+    if (p==-1 && r==INT_MIN) yl_lerror_s(LISP_ERROR,"%s: division of INT_MIN by -1","%");
     r=r%p;
     n--;
   }
@@ -905,7 +908,8 @@ static cell* bi_powS(int n){
 static cell* bi_addS(int n){
   char* add;
   char nbuff[20];
-  if (n && yl_stk[yl_sp-n] && yl_stk[yl_sp-n]->type==TYPE_NUM) return math_addS(n);
+  if (!n) return mk_num(0);
+  if (yl_stk[yl_sp-n] && yl_stk[yl_sp-n]->type==TYPE_NUM) return math_addS(n);
   int fixsp=yl_sp;
   char *newstr,*tmp,buff[100]; // un buffer statico per la maggior parte delle operazioni, diventa allocato dinamicamente se la nuova stringa è troppo lunga
   newstr=buff;
@@ -2226,7 +2230,7 @@ static cell* eval(cell* e,cell* a){
     } else {
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
-        return pop2(make_closure(push(e),push(a));
+        return pop2(make_closure(push(e),push(a)));
       } else {
         fn=e->car;
         x=e->cdr;
