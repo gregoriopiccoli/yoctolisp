@@ -72,7 +72,7 @@ garbage collector: mark-sweep.
 //#define DEBUG_GC
 //#define DEBUG_C_MEMORY
 //#define REPL_TIMING
-#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
+//#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
 
 #define MAX_CELLS 100000 // cons cells allocation block size
 #define MAX_SYMS  1000   // symbols allocation block size (not garbage collected)
@@ -1381,13 +1381,14 @@ static cell* bi_let(cell* x,cell* a){
     while (l){
       cell* car_l=car(l);
       if (atom(car_l)){  // variabile non inizializzata → nil
+        if (!is_sym(car_l)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         na=swp(mk_cons(mk_cons(car_l,0),na));
       } else {
         cell* n=car(car_l);
         if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
         if (n->sym[0]=='#') 
-          yl_stk[current_stackbase+n->str[1]-'A']=v;  // variabile speciale #A-#Z
+          yl_stk[current_stackbase+n->sym[1]-'A']=v;  // variabile speciale #A-#Z
         else 
           na=swp(mk_cons(mk_cons(n,v),na));
       }
@@ -1681,8 +1682,10 @@ static cell* bi_map(const int n,cell* a){
   while(lst){
     rplaca(qv,car(lst));
     cell* v=eval(fnc,a);
-    rplacd(p,mk_cons(v,0));
-    p=p->cdr;
+    if (v) {
+	  rplacd(p,mk_cons(v,0));
+      p=p->cdr;
+    }
     lst=lst->cdr;
   }
   return pop2(res->cdr);
@@ -2046,7 +2049,7 @@ static inline cell* pairlis(cell* x, cell* y,cell* a) {
 
 static inline cell* assq_cdr(const cell* x,const cell* a) {
   if (x->sym[0]=='#') // gestione delle variabili locali nello stack
-    return yl_stk[current_stackbase+x->str[1]-'A'];
+    return yl_stk[current_stackbase+x->sym[1]-'A'];
   // search in current environment
   while (a) {
     if (a->car->car==x) return a->car->cdr;
@@ -2592,8 +2595,10 @@ int main(int argc,char* argv[]){
         load(mk_str(argv[i]),0);
       else if (lj==BYE_JMP)
         stop=1;
-      else
+      else {
         printf("%s%s\n",(lj==SYSTEM_ERROR?"SYSTEM: ":""),yl_error_msg);
+        yl_sp=0;
+	  }
     }
   }
   while(!feof(stdin) && !stop) { // REPL loop
