@@ -1263,7 +1263,7 @@ static cell* bi_apply(const int n,cell* a){
 
 static cell* bi_quote(cell* x,cell* a){
   //CHECK1PRM(x,"quote");
-  if (!x || x->type==TYPE_CONS && x->cdr) wrongnparms("quote");
+  if (!x || (x->type==TYPE_CONS && x->cdr)) wrongnparms("quote");
   return car(x);
 }
 
@@ -2588,7 +2588,7 @@ int main(int argc,char* argv[]){
   if (argc>1) { // command line file
     int i;
     for(i=1;i<argc;i++){
-      if (strcmp(argv[i],"-bye")==0 || strcmp(argv[i],"-quit")==0 || strcmp(argv[i],"-exit")==0) {yl_bye();return 0;}
+      if (stop || strcmp(argv[i],"-bye")==0 || strcmp(argv[i],"-quit")==0 || strcmp(argv[i],"-exit")==0) {yl_bye();return 0;}
       printf("loading %s ...\n",argv[i]);
       lj=setjmp(yl_mainloop);
       if (!lj)
