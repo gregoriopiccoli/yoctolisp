@@ -141,15 +141,15 @@ static cell* yl_stk[MAX_STK];
 enum {LISP_ERROR=1,SYSTEM_ERROR,BYE_JMP};
 
 static char yl_error_msg[1024];
-void yl_lerror(const int code,const char* msg){strcpy(yl_error_msg,msg);longjmp(yl_mainloop,code);}
-void yl_lerror_i(const int code,const char* msg,const int v){sprintf(yl_error_msg,msg,v);longjmp(yl_mainloop,code);}
-void yl_lerror_s(const int code,const char* msg,const char* v){sprintf(yl_error_msg,msg,v);longjmp(yl_mainloop,code);}
-void yl_lerror_ss(const int code,const char* msg,const char* v1,const char* v2){sprintf(yl_error_msg,msg,v1,v2);longjmp(yl_mainloop,code);}
+void yl_lerror(const int code,const char* msg){strncpy(yl_error_msg,msg,1023);longjmp(yl_mainloop,code);}
+void yl_lerror_i(const int code,const char* msg,const int v){snprintf(yl_error_msg,1023,msg,v);longjmp(yl_mainloop,code);}
+void yl_lerror_s(const int code,const char* msg,const char* v){snprintf(yl_error_msg,1023,msg,v);longjmp(yl_mainloop,code);}
+void yl_lerror_ss(const int code,const char* msg,const char* v1,const char* v2){snprintf(yl_error_msg,1023,msg,v1,v2);longjmp(yl_mainloop,code);}
 
-static inline int is_num(const cell* c){return c->type==TYPE_NUM;}
-static inline int is_str(const cell* c){return c->type==TYPE_STR;}
-static inline int is_sym(const cell* c){return c->type==TYPE_SYM||c->type==TYPE_KEYWORD||c->type==TYPE_BUILTINLAMBDA||c->type==TYPE_BUILTINMACRO||c->type==TYPE_BUILTINSTACK||c->type==TYPE_CXR;}
-static inline int is_cons(const cell* c){return c->type==TYPE_CONS;}
+static inline int is_num(const cell* c){return c && c->type==TYPE_NUM;}
+static inline int is_str(const cell* c){return c && c->type==TYPE_STR;}
+static inline int is_sym(const cell* c){return c && (c->type==TYPE_SYM||c->type==TYPE_KEYWORD||c->type==TYPE_BUILTINLAMBDA||c->type==TYPE_BUILTINMACRO||c->type==TYPE_BUILTINSTACK||c->type==TYPE_CXR);}
+static inline int is_cons(const cell* c){return c && c->type==TYPE_CONS;}
 
 #ifdef SAFE_CXR
 int max_stack=0;
@@ -351,10 +351,10 @@ static cell* mk_num(int v){
 
 static cell* mk_str(char* n){
   cell* c=yl_get_cell();
-  c->type=TYPE_STR;
-  c->lambdatype=LT_NOLAMBDA;
   c->str=malloc(strlen(n)+1);
   if (!c->str) yl_lerror(SYSTEM_ERROR,"memory exhausted");
+  c->type=TYPE_STR;
+  c->lambdatype=LT_NOLAMBDA;
   strcpy(c->str,n);
   return c;
 }
@@ -415,8 +415,9 @@ static cell* mk_sym(const char* n){
   //if (yl_nsyms==MAX_SYMS) yl_lerror(SYSTEM_ERROR,"symbols memory exhausted");
   if (yl_nsyms==MAX_SYMS) yl_addSymsBlock();
   cell* c=&yl_lsb->syms[yl_nsyms++];
-  c->type=(n[0]==':'?TYPE_KEYWORD:TYPE_SYM);
   c->sym=malloc(strlen(n)+1);
+  if (!c->sym) yl_lerror(SYSTEM_ERROR,"memory exhausted");
+  c->type=(n[0]==':'?TYPE_KEYWORD:TYPE_SYM);
   strcpy(c->sym,n);
   c->globalvalue=0;
   c->globalassigned=0;
@@ -1064,7 +1065,7 @@ static cell* bi_substrS(int n){
   cell *len=yl_stk[yl_sp-1];
   if(!len || len->type!=TYPE_NUM || len->value<0) yl_lerror(LISP_ERROR,"substr: num>0 expected as third parameter");
   int l=len->value;
-  if (l+p>sl) l=sl-p;
+  if (l>sl-p) l=sl-p;
   char c=s->str[p+l];
   s->str[p+l]=0;
   cell* res=mk_str(s->str+p);
@@ -1383,6 +1384,7 @@ static cell* bi_let(cell* x,cell* a){
         na=swp(mk_cons(mk_cons(car_l,0),na));
       } else {
         cell* n=car(car_l);
+        if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
         if (n->sym[0]=='#') 
           yl_stk[current_stackbase+n->str[1]-'A']=v;  // variabile speciale #A-#Z
@@ -1620,7 +1622,7 @@ static cell* bi_dotimes(cell* x,cell* a){
   if (!endv || !is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
   if (!atom(res)) res=res->car;
   int i,l=endv->value;
-  cell* loopcounter=mk_num(0);
+  cell* loopcounter=push(mk_num(0));
   cell* loopvar=mk_cons(var,loopcounter); // crea la variabile di loop
   a=push(mk_cons(loopvar,a)); // la aggiunge all' ambiente corrente
   cell* body;
@@ -1633,7 +1635,7 @@ static cell* bi_dotimes(cell* x,cell* a){
     }
   }
   rplacd(loopvar,mk_num(i));
-  return pop(res?eval(res,a):0);
+  return pop2(res?eval(res,a):0);
 }
 
 static cell* bi_dolist(cell* x,cell* a){
@@ -1846,7 +1848,9 @@ static cell* bi_outputS(const int n){
   FILE* f=0;
   if (is_sym(name)) f=fopen(name->sym,"w");
   else if (is_str(name)) f=fopen(name->str,"w");
+  else yl_lerror(LISP_ERROR,"file name error in output");
   if (!f) yl_lerror_s(LISP_ERROR,"unable to open file %s",(is_sym(name)?name->sym:name->str));
+  if (yl_stdout!=stdout) fclose(yl_stdout);
   yl_stdout=f;
   return t_atom;
 }
@@ -1958,7 +1962,8 @@ static inline cell* make_closure(const cell* f,cell* a){ // build a closure from
   return res;
 }
 static inline cell* get_closure(const cell* f,cell* a){ // get closure enviriment
-  cell* env=f->cdr->cdr->cdr;
+  //cell* env=f->cdr->cdr->cdr;
+  cell* env=cdr(cdr(cdr(f)));
   if (env) return (env==invisible_atom?0:env);
   return a;
 }
@@ -2082,7 +2087,7 @@ static cell* apply_keyword(cell* fn,cell* x,cell* a){yl_lerror_s(LISP_ERROR,"%s 
 
 static cell* apply_sym(cell* fn,cell* x,cell* a){
   CURRFN(fn);
-  return apply(assq_cdr(fn, a),x,a);
+  return pop(apply(push(assq_cdr(fn, a)),x,a));
 }
 
 static cell* apply_lambda(cell* fn,cell* x,cell* a){
@@ -2134,6 +2139,7 @@ static cell* apply_stacklambdatype(cell* fn,cell* x,cell* a){
   CHECK_S(!car(car(cdr(fn))) || car(car(cdr(fn)))->type!=TYPE_NUM,LISP_ERROR,"\"%s\" wrong parameters definition",curr_fn->str);
   int nparms=fn->cdr->car->car->value;
   int stackspace=fn->cdr->car->cdr->value;
+  if (nparms+stackspace>26) yl_lerror(LISP_ERROR,"too large parameters and stackpace for #lambda");
   int n,rest=0;
   if (nparms<0){
     nparms=-nparms-1;
@@ -2152,6 +2158,7 @@ static cell* apply_stacklambdalaptype(cell* fn,cell* x,cell* a){
   CHECK_S(!car(car(cdr(fn))) || car(car(cdr(fn)))->type!=TYPE_NUM,LISP_ERROR,"\"%s\" wrong parameters definition",curr_fn->str);
   int nparms=fn->cdr->car->car->value;
   int stackspace=fn->cdr->car->cdr->value;
+  if (nparms+stackspace>26) yl_lerror(LISP_ERROR,"too large parameters and stackpace for #lambda");
   int n,rest=0;
   if (nparms<0){
     nparms=-nparms-1;
@@ -2170,6 +2177,7 @@ static cell* apply_letloop(cell* fn,cell* x,cell* a){
 
 #ifdef EVAL_FUNCPTR
 static cell* apply_cons(cell* fn,cell* x,cell* a){
+  if (fn->type!=TYPE_CONS || !fn->car) yl_lerror(LISP_ERROR,"???? cons expected");
   return applycons_by_type[(int)fn->car->lambdatype](fn,x,a);
 }
 
@@ -2253,7 +2261,7 @@ static cell* eval(cell* e,cell* a){
   apply_builtinmacro: res=fn->builtinmacro(x,a);goto exit;
   apply_builtinstack: n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinstack(n),n);goto exit;
   apply_cxr: n=evstack(x,a);CURRFN(fn);res=popn(bi_cxxxrS(n,fn->sym),n);goto exit;
-	apply_letloop:res=mk_cons(fn,evlis(x,a));goto exit;
+  apply_letloop:res=mk_cons(fn,evlis(x,a));goto exit;
   apply_sym: CURRFN(fn);fn=swp(assq_cdr(fn, a));goto apply;
   apply_cons:
     /* geval
@@ -2275,6 +2283,7 @@ static cell* eval(cell* e,cell* a){
     if (n==LT_LABEL){a=mk_cons(push(mk_cons(car(fn->cdr),car(fn->cdr->cdr))),get_closure(fn,a));fn=popn(fn->cdr->cdr->car,4);goto apply_push;}
     */
     /* seval */
+    if (!fn->car) yl_lerror(LISP_ERROR,"cons expected as function");
     switch(fn->car->lambdatype){
       case LT_LAMBDA: e=car(cdr(fn->cdr));a=popn(ypa(fn->cdr->car,x,a,get_closure(fn,a)),3);goto tail_call;
       case LT_SLAMBDA: res=apply_stacklambdatype(fn,x,a);goto exit;    // !!!
@@ -2282,6 +2291,7 @@ static cell* eval(cell* e,cell* a){
       case LT_NOLAMBDA: fn=swp(eval(fn,a)); goto apply;
       case LT_MACRO: e=popn(eval(car(cdr(fn->cdr)), pairlis(fn->cdr->car, x, get_closure(fn,a) )),3);goto tail_call;
       case LT_LABEL: a=mk_cons(push(mk_cons(car(fn->cdr),car(fn->cdr->cdr))),get_closure(fn,a));fn=popn(fn->cdr->cdr->car,4);goto apply_push;
+      default: yl_lerror(LISP_ERROR,"invalid function");
     }
     /**/
   apply_keyword: yl_lerror_s(LISP_ERROR,"%s is a keyword, not a function",fn->sym);
