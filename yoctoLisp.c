@@ -45,6 +45,11 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// output che scrive su file
+// garbage collector senza azzeramento iniziale, consigliato da Clauda. Le celle nascono con gc=0, il mark mette gc=1, il collect rimette gc=0
+// cache di piccoli numeri, consigliato da Claude, diminiusce la pressione su garbage collector
+// trampolone statico, consigliato da Claude, il trampolino viene usato immediatamente, ne basta uno statico
+// sistemati tanti piccoli errori e sintassi accetate errate usando gli LLM (24/09/2026)
 // compilatore #lambda per le let: non compilare quando ci sono "do" e "named let"
 // compilatore #lambda per le let, ora leggono le variabili #, fare attenzione alla differenza tra "let" e "let*"
 // test della memoria con memwatch
@@ -66,7 +71,7 @@ garbage collector: mark-sweep.
 // eliminare *plist* da system.yl -- non disturba ...
 
 #define LEXICAL_SCOPING
-//#define TAILCALL
+#define TAILCALL
 #define SAFE_STACK
 #define SAFE_CXR
 //#define DEBUG_GC
@@ -200,15 +205,19 @@ cell* next_free_cell(cell* x){ASSERTGC(x->type==TYPE_FREE,"not free cell");retur
 
 static void print_sexpr(FILE* f,cell* c,int mode);
 
+// NB: TYPE_TRAMPOLINE è trattato come atomo: non deve mai essere raggiungibile durante un GC (viene sempre scompattato da eval prima di qualsiasi allocazione)
+
 static void yl_mark(cell* c){
   while (c && !c->gc){
     c->gc=1;
+    ASSERTGC(c->type!=TYPE_TRAMPOLINE,"trampoline reachable during GC");
     if (ATOM(c)) return;
     yl_mark(c->car);
     c=c->cdr;
   }
 }
 
+/*
 static void yl_clearcellsgc(){
   cellsBlock* cb=yl_fcb;
   while (cb){
@@ -218,6 +227,7 @@ static void yl_clearcellsgc(){
     cb=cb->next;
   }
 }
+*/
 
 static int yl_ngc=0,yl_nfreecells=0;
 
@@ -233,7 +243,7 @@ static void yl_gc(){
     c=NEXTFREECELL(c);
   }
   // segna come libere le celle
-  yl_clearcellsgc();
+  //yl_clearcellsgc();
   // -- mark --
   for(i=0;i<yl_sp;i++)
     yl_mark(yl_stk[i]); // mark all locked objects
@@ -261,7 +271,10 @@ static void yl_gc(){
       ASSERTGC(c->type==TYPE_CONS||c->type==TYPE_NUM||c->type==TYPE_STR||c->type==TYPE_FREE||c->type==TYPE_TRAMPOLINE||c->type==TYPE_LETLOOP,"unexpected cell type");
       ASSERTGC(yl_stopping || c->type!=TYPE_FREE,"exploring a free cell");
       if (!c->gc){
-        if (c->type==TYPE_STR) free(c->str);
+        if (c->type==TYPE_STR) {
+          free(c->str);
+          c->type=TYPE_FREE; // per evitare che venga rilasciata 2 volte nella "bye" che avviene sempre in uscita
+        }
         nfreeinblock++;
 #ifdef DEBUG_GC
         c->type=TYPE_FREE;c->free_cells=l_free_cells;c->car=c->cdr=0;
@@ -269,6 +282,8 @@ static void yl_gc(){
         c->car=l_free_cells;
 #endif
         l_free_cells=c;  // connect all free cells
+      } else {
+        c->gc=0;
       }
     }
     //if (nfreeinblock==nc) printf("blocco liberabile %i\n",nc);
@@ -297,7 +312,11 @@ static void yl_addCellsBlock(){
   cell* l_free_cell=yl_free_cells;
   int i;
   for(i=0;i<MAX_CELLS;i++){
-    cb->cells[i].car=l_free_cell;l_free_cell=&(cb->cells[i]);
+    cell* c=&(cb->cells[i]);
+    c->car=l_free_cell;
+    c->gc=0;
+    c->type=TYPE_FREE;
+    l_free_cell=c;
 #ifdef DEBUG_GC
     cb->cells[i].free_cells=cb->cells[i].car;cb->cells[i].type=TYPE_FREE;cb->cells[i].car=cb->cells[i].cdr=0;
 #endif
@@ -341,12 +360,21 @@ static inline cell* yl_get_cell(){
   return yl_collect_cell();
 }
 
-static cell* mk_num(int v){
+#define MAX_NUM_CACHE 20
+static cell yl_numcache[MAX_NUM_CACHE];
+
+static cell* mk_num_heap(int v){
   cell* c=yl_get_cell();
   c->type=TYPE_NUM;
   c->lambdatype=LT_NOLAMBDA;
   c->value=v;
   return c;
+}
+
+static inline cell* mk_num(int v){
+  // cache dei numeri piccoli
+  if (0<=v && v<MAX_NUM_CACHE) return &(yl_numcache[v]);
+  return mk_num_heap(v);
 }
 
 static cell* mk_str(char* n){
@@ -380,11 +408,19 @@ static cell* mk_cons(cell* car,cell* cdr){
 }
 
 #ifdef TAILCALL
+// prova di trampolino statico
+static cell yl_tramp={TYPE_TRAMPOLINE};   // fuori dall'heap: mai marcata né raccolta
+static inline cell* mk_trampoline(cell* car,cell* cdr){
+  yl_tramp.car=car;yl_tramp.cdr=cdr;
+  return &yl_tramp;
+}
+/*
 static cell* mk_trampoline(cell* car,cell* cdr){
   cell* c=mk_cons(car,cdr);
   c->type=TYPE_TRAMPOLINE;
   return c;
 }
+*/
 #endif
 
 static cell* bi_cxxxrS(const int n,const char* sym);
@@ -608,7 +644,7 @@ static int already_printed(cell* c){
 }
 
 FILE* yl_stdout;
- 
+
 static void print_sexpr(FILE* f,cell* c,int mode){
   int isStart=(yl_print_stack_base==-1),ap;
   if (!isStart && c && c->type==TYPE_CONS) { // è una chiamata ricorsiva, controlla che non sia già stato stampato
@@ -849,6 +885,9 @@ static cell* math_addS(int n){
 }
 
 static cell* bi_subS(int n){
+#ifdef SAFE_CXR
+  if (!n) yl_lerror_s(LISP_ERROR,"%s: wrong number of parameters","-");
+#endif
   int r=get_num(yl_stk[yl_sp-n],"-");
   n--;
   if (!n) r=-r;
@@ -860,6 +899,9 @@ static cell* bi_subS(int n){
 }
 
 static cell* bi_multS(int n){
+#ifdef SAFE_CXR
+  if (!n) yl_lerror_s(LISP_ERROR,"%s: wrong number of parameters","*");
+#endif
   int r=get_num(yl_stk[yl_sp-n],"*");
   n--;
   while(n){
@@ -870,6 +912,9 @@ static cell* bi_multS(int n){
 }
 
 static cell* bi_divS(int n){
+#ifdef SAFE_CXR
+  if (!n) yl_lerror_s(LISP_ERROR,"%s: wrong number of parameters","/");
+#endif
   int r=get_num(yl_stk[yl_sp-n],"/");
   n--;
   while (n){
@@ -883,6 +928,9 @@ static cell* bi_divS(int n){
 }
 
 static cell* bi_modS(int n){
+#ifdef SAFE_CXR
+  if (!n) yl_lerror_s(LISP_ERROR,"%s: wrong number of parameters","%");
+#endif
   int r=get_num(yl_stk[yl_sp-n],"%");
   n--;
   while (n){
@@ -896,6 +944,9 @@ static cell* bi_modS(int n){
 }
 
 static cell* bi_powS(int n){
+#ifdef SAFE_CXR
+  if (!n) yl_lerror_s(LISP_ERROR,"%s: wrong number of parameters","^");
+#endif
   int r=get_num(yl_stk[yl_sp-n],"^");
   n--;
   while (n){
@@ -952,6 +1003,9 @@ static cell* bi_notS(const int n){
 static cell* bi_and(cell* x,cell* a){
   cell* last=t_atom; // valore che sarà tornato in caso di lista vuota
   while(x){
+#ifdef TAILCALL
+    if (!x->cdr) return mk_trampoline(x->car,a);   // ultimo argomento: in coda
+#endif
     last=eval(car(x),a); // non occorre proteggere "last" perché viene tornata solo se non ci sono altre espressioni da valutare
     if(!last) return 0;
     x=x->cdr;
@@ -961,6 +1015,9 @@ static cell* bi_and(cell* x,cell* a){
 
 static cell* bi_or(cell* x,cell* a){
   while(x){
+#ifdef TAILCALL
+    if (!x->cdr) return mk_trampoline(x->car,a);   // ultimo argomento: in coda
+#endif
     cell* last=eval(car(x),a);
     if (last) return last;
     x=x->cdr;
@@ -1013,19 +1070,19 @@ static cell* bi_rand(int n){
   CHECK1PRMN(n,"rand");
   cell* v=yl_stk[yl_sp-1];
   if (!v || !is_num(v) || v->value<=0) yl_lerror(LISP_ERROR,"rand: number (>0) expected");
-	return mk_num(rand()%v->value);
+  return mk_num(rand()%v->value);
 }
 
 static cell* bi_randomize(int n){
-	if (n==0){
-		srand(time(NULL));
-	} else {
+  if (n==0){
+    srand(time(NULL));
+  } else {
     CHECK1PRMN(n,"randomize");
     cell* v=yl_stk[yl_sp-1];
     if (!v || !is_num(v) || v->value<=0) yl_lerror(LISP_ERROR,"randomize: number (>0) expected");
-		srand(v->value);
-	}
-	return 0;
+    srand(v->value);
+  }
+  return 0;
 }
 
 static cell* bi_lenS(int n){
@@ -1085,18 +1142,21 @@ static cell* bi_atS(int n){
   return mk_num(p-ss);
 }
 
-static int current_stackbase;
+static int current_stackbase=0;
 static inline cell* popstackbase(cell* x,int old_base){current_stackbase=old_base;return x;}
 
 static cell* setv(cell* name,cell* value,cell* e){
   //cell* e=a;
   CHECK_0(!name || name->type!=TYPE_SYM,LISP_ERROR,"set: not assigning to a symbol");
   if (name->sym[0]=='#'){
+#ifdef SAFE_CXR
+    if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+#endif
     yl_stk[current_stackbase+name->sym[1]-'A']=value;
     return value;
   }
   while(e){
-    if (e->car->car==name) {
+    if (car(car(e))==name) {
       rplacd(e->car,value);
       return value;
     }
@@ -1263,14 +1323,16 @@ static cell* bi_apply(const int n,cell* a){
 
 static cell* bi_quote(cell* x,cell* a){
   //CHECK1PRM(x,"quote");
+#ifdef SAFE_CXR
   if (!x || (x->type==TYPE_CONS && x->cdr)) wrongnparms("quote");
+#endif
   return car(x);
 }
 
 static cell* bi_cond(cell* x,cell* a){
   /*
      Implementazione della funzione lisp "cond"
-     
+
      (cond ((test1 val1)(test2 val2) ... (testn valn) [(else val_else)] )
   */
   while(x){ //ATTENZIONE:  questa versione di cond torna NIL se nessun caso è vero (come common lisp)
@@ -1287,11 +1349,11 @@ static cell* bi_cond(cell* x,cell* a){
 }
 
 static cell* bi_let(cell* x,cell* a){
-  /* 
+  /*
      Implementazione della funzione lisp "let", con la named let da scheme.
-     
+
      let: (let ((x 1) (y 2)) body...) - let* semantics (bindings evaluated in order)
-     named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function 
+     named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function
   */
   cell* res=push(a);
   cell* na=push(a);
@@ -1305,9 +1367,9 @@ static cell* bi_let(cell* x,cell* a){
     na=swp(mk_cons(mk_cons(l,loop_sym),na)); // qui va il trampolino per il loop
     // func version
     cell* loopname=l;
-    cell* loopfnprms=swp(mk_cons(0,0));
+    cell* loopfnprmsstart=swp(mk_cons(0,0));
+    cell* loopfnprms=loopfnprmsstart;
     push(na);
-    cell* loopfnprmsstart=loopfnprms;
     cell* loopfnbody=car(cdr(cdr(x)));
     //
     cell* basea=na;
@@ -1332,10 +1394,10 @@ static cell* bi_let(cell* x,cell* a){
       l=l->cdr;
     }
     // func version
-    na=pop(na);
-    loopfnprms=pop(loopfnprms);
-    push(na);
-    push(loopfnprms);
+    //na=pop(na);
+    //loopfnprms=pop(loopfnprms);
+    //push(na);
+    //push(loopfnprms);
     cell* clo=push(mk_cons(mk_cons(loopname,0),na));
     cell* loopfn=swp(mk_cons(lambda_atom,mk_cons(loopfnprmsstart->cdr,mk_cons(loopfnbody,clo))));
     clo->car->cdr=loopfn;
@@ -1387,9 +1449,12 @@ static cell* bi_let(cell* x,cell* a){
         cell* n=car(car_l);
         if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
-        if (n->sym[0]=='#') 
+        if (n->sym[0]=='#'){
+#ifdef SAFE_CXR
+          if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+#endif
           yl_stk[current_stackbase+n->sym[1]-'A']=v;  // variabile speciale #A-#Z
-        else 
+        } else
           na=swp(mk_cons(mk_cons(n,v),na));
       }
       l=l->cdr;
@@ -1471,7 +1536,7 @@ static cell* bi_do(cell* x,cell* a){
   return pop(res);
 }
 
-static inline cell* append(cell* a,cell* b){ 
+static inline cell* append(cell* a,cell* b){
   if (!a) return b;
   if (!b) return a;
   push(b);
@@ -1623,7 +1688,7 @@ static cell* bi_dotimes(cell* x,cell* a){
   if (!endv || !is_num(endv) || endv->value<0) yl_lerror(LISP_ERROR,"\"dotimes\" end value:positive number expected");
   if (!atom(res)) res=res->car;
   int i,l=endv->value;
-  cell* loopcounter=push(mk_num(0));
+  cell* loopcounter=push(mk_num_heap(0));
   cell* loopvar=mk_cons(var,loopcounter); // crea la variabile di loop
   a=push(mk_cons(loopvar,a)); // la aggiunge all' ambiente corrente
   cell* body;
@@ -1857,7 +1922,7 @@ static cell* bi_outputS(const int n){
   yl_stdout=f;
   return t_atom;
 }
-	
+
 #ifdef _WIN32
 #include <windows.h>
 //extern unsigned long GetTickCount();
@@ -2048,12 +2113,16 @@ static inline cell* pairlis(cell* x, cell* y,cell* a) {
 }
 
 static inline cell* assq_cdr(const cell* x,const cell* a) {
-  if (x->sym[0]=='#') // gestione delle variabili locali nello stack
+  if (x->sym[0]=='#') { // gestione delle variabili locali nello stack
+#ifdef SAFE_CXR
+    if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+#endif
     return yl_stk[current_stackbase+x->sym[1]-'A'];
+  }
   // search in current environment
   while (a) {
-    if (a->car->car==x) return a->car->cdr;
-    a=a->cdr;
+    if (car(car(a))==x) return cdr(car(a)); //a->car->cdr;
+    a=cdr(a); //a->cdr;
   }
   // and then in global environment
   if (!x->globalassigned) yl_lerror_s(LISP_ERROR,"variable \"%s\" not found",x->sym);
@@ -2124,7 +2193,11 @@ static cell* apply_lambdatype(cell* fn,cell* x,cell* a){
 }
 
 static cell* apply_macrotype(cell* fn,cell* x,cell* a){
+#ifdef TAILCALL
+  return pop(mk_trampoline(swp(eval(car(cdr(cdr(fn))), push(pairlis(car(cdr(fn)), x, get_closure(fn,a))))), a));
+#else
   return pop(eval(swp(eval(car(cdr(cdr(fn))), push(pairlis(car(cdr(fn)), x, get_closure(fn,a) )))), a));
+#endif
   //cell* m=swp(eval(car(cdr(cdr(fn))), push(pairlis(car(cdr(fn)), x, get_closure(fn,a) ))));showdbg("m",m);showdbg("a",a);cell* r=eval(m,a);showdbg("r",r);return pop(r);
 }
 
@@ -2180,7 +2253,7 @@ static cell* apply_letloop(cell* fn,cell* x,cell* a){
 
 #ifdef EVAL_FUNCPTR
 static cell* apply_cons(cell* fn,cell* x,cell* a){
-  if (fn->type!=TYPE_CONS || !fn->car) yl_lerror(LISP_ERROR,"???? cons expected");
+  if (fn->type!=TYPE_CONS || !fn->car) yl_lerror(LISP_ERROR,"cons expected as function");
   return applycons_by_type[(int)fn->car->lambdatype](fn,x,a);
 }
 
@@ -2452,6 +2525,10 @@ static int yl_init(){
   yl_ngc=yl_sp=0;
   i=setjmp(yl_mainloop);
   if (!i){
+    for(i=0;i<MAX_NUM_CACHE;i++){
+      yl_numcache[i].type=TYPE_NUM; yl_numcache[i].lambdatype=LT_NOLAMBDA;
+      yl_numcache[i].gc=1; yl_numcache[i].value=i;
+    }
     yl_addCellsBlock(); // create the first cell block
     yl_addSymsBlock();
 #ifdef EVAL_FUNCPTR
@@ -2467,6 +2544,7 @@ static int yl_init(){
     apply_by_type[TYPE_CONS]=&apply_cons;
     apply_by_type[TYPE_FREE]=&apply_error;
     apply_by_type[TYPE_LETLOOP]=&apply_letloop;
+    apply_by_type[TYPE_TRAMPOLINE]=&apply_error;
     applycons_by_type[LT_NOLAMBDA]=&apply_nolambdatype;
     applycons_by_type[LT_LAMBDA]=&apply_lambdatype;
     applycons_by_type[LT_MACRO]=&apply_macrotype;
@@ -2536,9 +2614,9 @@ static void yl_bye(){
     for(i=0;i<MAX_CELLS;i++){
       c=&(cb->cells[i]);
       ASSERTGC(c->type==TYPE_CONS||c->type==TYPE_NUM||c->type==TYPE_STR||c->type==TYPE_FREE||c->type==TYPE_LETLOOP,"unexpected cell type");
-      if (c->gc==1){
+      //if (c->gc==1){
         if (c->type==TYPE_STR) free(c->str);
-      }
+      //}
     }
     cellsBlock* tmpcb=cb;
     cb=cb->next;
@@ -2568,7 +2646,7 @@ int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
   yl_stdout=stdout;
-  printf("\n    \\/octoLISP\n ---/------------\n0.9.24 %s\n",__DATE__);
+  printf("\n    \\/octoLISP\n ---/------------\n0.9.50 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
   printf(SCOPING_MODE);
@@ -2588,7 +2666,7 @@ int main(int argc,char* argv[]){
   if (argc>1) { // command line file
     int i;
     for(i=1;i<argc;i++){
-      if (stop || strcmp(argv[i],"-bye")==0 || strcmp(argv[i],"-quit")==0 || strcmp(argv[i],"-exit")==0) {yl_bye();return 0;}
+      if (stop || strcmp(argv[i],"-bye")==0 || strcmp(argv[i],"-quit")==0 || strcmp(argv[i],"-exit")==0) {yl_bye();return bye_value;}
       printf("loading %s ...\n",argv[i]);
       lj=setjmp(yl_mainloop);
       if (!lj)
@@ -2598,6 +2676,7 @@ int main(int argc,char* argv[]){
       else {
         printf("%s%s\n",(lj==SYSTEM_ERROR?"SYSTEM: ":""),yl_error_msg);
         yl_sp=0;
+        current_stackbase=0;
 	  }
     }
   }
@@ -2605,6 +2684,7 @@ int main(int argc,char* argv[]){
     lj=setjmp(yl_mainloop);
     if (!lj){
       yl_sp=0;
+      current_stackbase=0;
       curr_fn=anon_atom;
       printf("\n> ");
       input=read_sexpr(stdin);START_EVAL_TIME;
