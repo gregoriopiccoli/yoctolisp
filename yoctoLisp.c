@@ -27,7 +27,6 @@ garbage collector: mark-sweep.
 
 // cose da fare:
 //  
-// LLM: fare una lista delle stringhe per liberarle rapidamente nel GC e poi avere un ciclo su tutte le celle senza "if" (le stringhe sono poche)
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
@@ -47,6 +46,7 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// LLM: fare una lista delle stringhe per liberarle rapidamente nel GC e poi avere un ciclo su tutte le celle senza "if" (le stringhe sono poche)
 // LLM: hashsym rapido anziché sym[0]='#'
 // output che scrive su file
 // garbage collector senza azzeramento iniziale, consigliato da Clauda. Le celle nascono con gc=0, il mark mette gc=1, il collect rimette gc=0
@@ -220,33 +220,14 @@ static void yl_mark(cell* c){
   }
 }
 
-/*
-static void yl_clearcellsgc(){
-  cellsBlock* cb=yl_fcb;
-  while (cb){
-    int i;
-    for(i=0;i<MAX_CELLS;i++) // mark all cells as unused
-      cb->cells[i].gc=0;
-    cb=cb->next;
-  }
-}
-*/
-
 static int yl_ngc=0,yl_nfreecells=0;
+static cell* yl_strcells=0; // lista delle celle stringa vive (il campo cdr fa da link)
 
 static void yl_gc(){
   int i;
   cell *c, *sc;
   cellsBlock* cb;
   symsBlock *sb;
-  // se il garbage collector viene chiamato con celle libere è possibile che vengano rilasciate più volte, bisogna marcarle come libere
-  /*c=yl_free_cells;
-  while(c){
-    c->type=TYPE_FREE;
-    c=NEXTFREECELL(c);
-  }*/
-  // segna come libere le celle
-  //yl_clearcellsgc();
   // -- mark --
   for(i=0;i<yl_sp;i++)
     yl_mark(yl_stk[i]); // mark all locked objects
@@ -264,6 +245,21 @@ static void yl_gc(){
   // -- sweep --
   yl_ngc++;
   yl_nfreecells=0;
+  // le stringhe sono tenute in una lista a parte: così durante la spazzatura non serve
+  // controllare il tipo di ogni singola cella, e ogni stringa viene liberata una volta sola
+  {
+    cell** pp=&yl_strcells;
+    cell* sc2=yl_strcells;
+    while(sc2){
+      if (!sc2->gc){
+        free(sc2->str);
+        *pp=sc2->cdr;   // stacca la stringa dalla lista
+      } else
+        pp=&sc2->cdr;
+      sc2=sc2->cdr;
+    }
+  }  
+  // ora recupera le celle libere
   cell* l_free_cells=0;
   cb=yl_fcb;
   while(cb){
@@ -274,10 +270,6 @@ static void yl_gc(){
       ASSERTGC(c->type==TYPE_CONS||c->type==TYPE_NUM||c->type==TYPE_STR||c->type==TYPE_FREE||c->type==TYPE_TRAMPOLINE||c->type==TYPE_LETLOOP,"unexpected cell type");
       ASSERTGC(yl_stopping || c->type!=TYPE_FREE,"exploring a free cell");
       if (!c->gc){
-        if (c->type==TYPE_STR) {
-          free(c->str);
-          c->type=TYPE_FREE; // per evitare che venga rilasciata 2 volte nella "bye" che avviene sempre in uscita
-        }
         nfreeinblock++;
 #ifdef DEBUG_GC
         c->type=TYPE_FREE;c->free_cells=l_free_cells;c->car=c->cdr=0;
@@ -387,6 +379,8 @@ static cell* mk_str(char* n){
   c->type=TYPE_STR;
   c->lambdatype=LT_NOLAMBDA;
   strcpy(c->str,n);
+  c->cdr=yl_strcells;  // il campo cdr, libero per una stringa, fa da link alla lista
+  yl_strcells=c;
   return c;
 }
 
@@ -2613,15 +2607,17 @@ static void yl_bye(){
   int i;
   cell* c;
   yl_sp=0; // se c'erano degli errori si riparte ...
-  yl_gc(); // necessario per sapere quali sono effettivamente le stringhe da liberare
-  while(cb){ // free all cells and cells blocks
-    for(i=0;i<MAX_CELLS;i++){
-      c=&(cb->cells[i]);
-      ASSERTGC(c->type==TYPE_CONS||c->type==TYPE_NUM||c->type==TYPE_STR||c->type==TYPE_FREE||c->type==TYPE_LETLOOP,"unexpected cell type");
-      //if (c->gc==1){
-        if (c->type==TYPE_STR) free(c->str);
-      //}
+  //yl_gc(); // necessario per sapere quali sono effettivamente le stringhe da liberare
+  { // libera le stringhe rimaste vive, usando la lista
+    cell* s=yl_strcells;
+    while(s){
+      cell* next=s->cdr;
+      free(s->str);
+      s=next;
     }
+    yl_strcells=0;
+  }
+  while(cb){ // free all cells and cells blocks
     cellsBlock* tmpcb=cb;
     cb=cb->next;
     free(tmpcb);
