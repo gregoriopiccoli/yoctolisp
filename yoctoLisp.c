@@ -26,7 +26,7 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
-//  
+//
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
@@ -85,6 +85,12 @@ garbage collector: mark-sweep.
 #define MAX_CELLS 100000 // cons cells allocation block size
 #define MAX_SYMS  1000   // symbols allocation block size (not garbage collected)
 #define MAX_STK   100000 // stack size
+
+#if defined(__GNUC__) && !defined(__clang__)
+// la vettorizzazione SLP fonde letture adiacenti di yl_stk (es. yl_stk[yl_sp-2],yl_stk[yl_sp-1]) in un load da 16 byte
+// subito dopo due push da 8 byte: lo store-to-load forwarding fallisce e la CPU va in stallo (-22% sul bench "cons")
+#pragma GCC optimize("no-tree-slp-vectorize")
+#endif
 
 #ifdef DEBUG_C_MEMORY
 #define MEMWATCH
@@ -258,7 +264,7 @@ static void yl_gc(){
         pp=&sc2->cdr;
       sc2=sc2->cdr;
     }
-  }  
+  }
   // ora recupera le celle libere
   cell* l_free_cells=0;
   cb=yl_fcb;
@@ -699,7 +705,13 @@ void showdbg(char* s,cell* x){printf("%s=",s);print_sexpr(stdout,x,0);printf("\n
 
 // --------- l' interprete! ---------------------------------------
 
-static cell* eval(cell* fn,cell* a);
+#if defined(__GNUC__) || defined(__clang__)
+#define NOINLINE __attribute__((noinline))
+#else
+#define NOINLINE
+#endif
+static NOINLINE cell* eval_cons(cell* e,cell* a);
+static inline cell* eval(cell* e,cell* a);
 #ifdef EVAL_FUNCPTR
 static inline cell* apply(cell* fn,cell* x,cell* a);
 #endif
@@ -2262,7 +2274,7 @@ static inline cell* apply(cell* fn,cell* x,cell* a) {
   return apply_by_type[(int)(fn->type)](fn,x,a);
 }
 
-static cell* eval(cell* e,cell* a) {
+static NOINLINE cell* eval_cons(cell* e,cell* a) {
   CHECKFREECELL(e)
   CHECKFREECELL(a)
   //printf("eval ");print_sexpr(stdout,e,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
@@ -2297,10 +2309,11 @@ static cell* eval(cell* e,cell* a) {
 
 #else
 
-static cell* eval(cell* e,cell* a){
+static NOINLINE cell* eval_cons(cell* e,cell* a){
   static void* apply_jump[]={&&apply_cons,&&apply_sym,&&apply_keyword,&&apply_num,&&apply_str,&&apply_builtinlambda,
                              &&apply_builtinmacro,&&apply_builtinstack,&&apply_cxr,&&apply_letloop,&&apply_free,&&apply_trampoline};
   //static void* apply_cons[]={&&nolambda,&&lambda,&&macro,&&label,&&slambda,&&slambdalap};
+  goto eval_cons;
   cell *fn,*x,*res;
   int n;
   tail_call:
@@ -2311,6 +2324,7 @@ static cell* eval(cell* e,cell* a){
       else
         return assq_cdr(e, a);
     } else {
+	  eval_cons:	
       CHECK_0(!e->car,LISP_ERROR,"\"nil\" is not a function");
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
         return pop2(make_closure(push(e),push(a)));
@@ -2363,8 +2377,16 @@ static cell* eval(cell* e,cell* a){
       case LT_SLAMBDA: res=apply_stacklambdatype(fn,x,a);goto exit;    // !!!
       case LT_SLAMBDALAP: res=apply_stacklambdalaptype(fn,x,a);goto exit; // !!!
       case LT_NOLAMBDA: fn=swp(eval(fn,a)); goto apply;
-      case LT_MACRO: e=popn(eval(car(cdr(fn->cdr)), pairlis(fn->cdr->car, x, get_closure(fn,a) )),3);goto tail_call;
-      case LT_LABEL: a=mk_cons(push(mk_cons(car(fn->cdr),car(fn->cdr->cdr))),get_closure(fn,a));fn=popn(fn->cdr->cdr->car,4);goto apply_push;
+      // i controlli car()/cdr() vanno fatti in istruzioni separate, prima degli accessi diretti fn->cdr->...:
+      // l'ordine di valutazione degli argomenti di una funzione in C non è definito
+      case LT_MACRO: e=car(cdr(fn->cdr));e=popn(eval(e, pairlis(fn->cdr->car, x, get_closure(fn,a) )),3);goto tail_call;
+      case LT_LABEL: {
+        cell* name=car(fn->cdr);       // valida fn->cdr
+        cell* lfn=car(fn->cdr->cdr);   // valida fn->cdr->cdr
+        a=mk_cons(push(mk_cons(name,lfn)),get_closure(fn,a));
+        fn=popn(lfn,4);
+        goto apply_push;
+      }
       default: yl_lerror(LISP_ERROR,"invalid function");
     }
     /**/
@@ -2379,6 +2401,15 @@ static cell* eval(cell* e,cell* a){
   return popn(res,3);
 }
 #endif
+
+// eval: percorso veloce inline per nil, costanti e variabili; le espressioni composte vanno in eval_cons
+// (GCC non può fare da solo l'inlining parziale di eval_cons perché usa computed goto)
+static inline cell* eval(cell* e,cell* a){
+  CHECKFREECELL(e)
+  if (!e) return 0;
+  if (ATOM(e)) return e->type==TYPE_SYM?assq_cdr(e,a):e; // numbers, strings, keywords and builtin are 'autoquoting'
+  return eval_cons(e,a);
+}
 
 #if defined(__GNUC__) || defined(__clang__) || defined(__TINYC__)
 #define CALCULATEDGOTO
@@ -2605,7 +2636,6 @@ static void yl_bye(){
   if (yl_stdout!=stdout) fclose(yl_stdout);
   cellsBlock *cb=yl_fcb;
   int i;
-  cell* c;
   yl_sp=0; // se c'erano degli errori si riparte ...
   //yl_gc(); // necessario per sapere quali sono effettivamente le stringhe da liberare
   { // libera le stringhe rimaste vive, usando la lista
