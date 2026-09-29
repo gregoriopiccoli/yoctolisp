@@ -705,12 +705,7 @@ void showdbg(char* s,cell* x){printf("%s=",s);print_sexpr(stdout,x,0);printf("\n
 
 // --------- l' interprete! ---------------------------------------
 
-#if defined(__GNUC__) || defined(__clang__)
-#define NOINLINE __attribute__((noinline))
-#else
-#define NOINLINE
-#endif
-static NOINLINE cell* eval_cons(cell* e,cell* a);
+static cell* eval_cons(cell* e,cell* a);
 static inline cell* eval(cell* e,cell* a);
 #ifdef EVAL_FUNCPTR
 static inline cell* apply(cell* fn,cell* x,cell* a);
@@ -2274,7 +2269,7 @@ static inline cell* apply(cell* fn,cell* x,cell* a) {
   return apply_by_type[(int)(fn->type)](fn,x,a);
 }
 
-static NOINLINE cell* eval_cons(cell* e,cell* a) {
+static cell* eval_cons(cell* e,cell* a) {
   CHECKFREECELL(e)
   CHECKFREECELL(a)
   //printf("eval ");print_sexpr(stdout,e,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
@@ -2309,7 +2304,7 @@ static NOINLINE cell* eval_cons(cell* e,cell* a) {
 
 #else
 
-static NOINLINE cell* eval_cons(cell* e,cell* a){
+static cell* eval_cons(cell* e,cell* a){
   static void* apply_jump[]={&&apply_cons,&&apply_sym,&&apply_keyword,&&apply_num,&&apply_str,&&apply_builtinlambda,
                              &&apply_builtinmacro,&&apply_builtinstack,&&apply_cxr,&&apply_letloop,&&apply_free,&&apply_trampoline};
   //static void* apply_cons[]={&&nolambda,&&lambda,&&macro,&&label,&&slambda,&&slambdalap};
