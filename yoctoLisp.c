@@ -2646,7 +2646,7 @@ int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
   yl_stdout=stdout;
-  printf("\n    \\/octoLISP\n ---/------------\n0.9.50 %s\n",__DATE__);
+  printf("\n    \\/octoLISP\n ---/------------\n0.9.51 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
   printf(SCOPING_MODE);
