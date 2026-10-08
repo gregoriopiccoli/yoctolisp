@@ -8,6 +8,9 @@ garbage collector: mark-sweep.
 */
 
 //timing
+// 0.99.02 88% con suggerimenti di Space Bunny
+// 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
+//
 // 0.98.23
 //         44% 8100 --> 42% 7800 se trovo l'errore (con gc a pseudo generazioni ... trovatO. non risolvibile!)
 //                      43% 8000 risolto: marcare tutto e non fermarsi al primo 1
@@ -497,6 +500,7 @@ static cell* mk_namedlet(cell* name){
 }
 
 static cell *quote_atom,*t_atom,*lambda_atom,*macro_atom,*label_atom,*anon_atom,*invisible_atom,*else_atom;
+static cell *if_atom,*cons_atom;
 
 #ifdef SAFE_CXR
 static inline cell* rplaca(cell* c,cell* n){if(!c || c->type!=TYPE_CONS) yl_lerror(SYSTEM_ERROR,"rplaca not on a cons");c->car=n;return c;}
@@ -2324,8 +2328,28 @@ static cell* eval_cons(cell* e,cell* a){
       if(e->car->lambdatype) {//if (e->car==lambda_atom || e->car==macro_atom || e->car==label_atom){
         return pop2(make_closure(push(e),push(a)));
       } else {
+        // percorso veloce per "quote": non alloca nulla, quindi non serve alcuna protezione
+        // e si evita del tutto il dispatch, i push e il trampolino
+        if (e->car==quote_atom) {
+          cell* q=e->cdr;
+#ifdef SAFE_CXR
+          if (!q || (q->type==TYPE_CONS && q->cdr)) wrongnparms("quote");
+#endif
+          return car(q);
+        }
         fn=e->car;
         x=e->cdr;
+        // percorso veloce per "if": evita il dispatch, i tre push e il trampolino
+        if (fn==if_atom) {
+          CURRFN(fn);
+          CHECKNPRM(x,2,3,"if");
+          push(a);                             // protegge l'ambiente durante la valutazione
+          cell* c=eval(car(x),a);
+          if (c) e=car(x->cdr);
+          else { cell* t=x->cdr->cdr; e=(t?car(t):0); }
+          pop(0);
+          goto tail_call;
+        }
         goto apply_push;
       }
     }
@@ -2333,16 +2357,30 @@ static cell* eval_cons(cell* e,cell* a){
   return 0;
   /**/
   apply_push:
-  push(a);
-  push(x);
-  push(fn);
+  // tre push con un solo controllo di traboccamento (equivalente a push();push();push())
+#if defined(SAFE_CXR) || defined(SAFE_STACK)
+  if (yl_sp+3>=MAX_STK) yl_lerror(SYSTEM_ERROR,"stack overflow");
+#endif
+  yl_stk[yl_sp]=a;yl_stk[yl_sp+1]=x;yl_stk[yl_sp+2]=fn;yl_sp+=3;
   apply:
   //printf("apply:");print_sexpr(stdout,fn,1);printf(" ");print_sexpr(stdout,a,1);printf("\n");
   CHECK_0(!fn,LISP_ERROR,"\"nil\" is not a function");
+  // dispensa a rami diretti ordinati per frequenza: evita la predizione indiretta (che sbaglia ~80%)
+  {
+    int t=(int)fn->type;
+    if (t==TYPE_BUILTINSTACK)   goto apply_builtinstack;
+    if (t==TYPE_BUILTINMACRO)   goto apply_builtinmacro;
+    if (t==TYPE_CONS)           goto apply_cons;
+    if (t==TYPE_SYM)            goto apply_sym;
+  }
   goto *apply_jump[(int)fn->type];
   apply_builtinlambda: n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinlambda(n,a),n);goto exit;
   apply_builtinmacro: res=fn->builtinmacro(x,a);goto exit;
-  apply_builtinstack: n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinstack(n),n);goto exit;
+  apply_builtinstack:
+    // percorso veloce per "cons", il builtin piu' chiamato: evita la chiamata indiretta.
+    // La semantica e' identica a bi_consS, chiamata attraverso fn->builtinstack.
+    if (fn==cons_atom){ n=evstack(x,a);CHECK2PRMN(n,"cons");res=popn(mk_cons(yl_stk[yl_sp-2],yl_stk[yl_sp-1]),n);goto exit; }
+    n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinstack(n),n);goto exit;
   apply_cxr: n=evstack(x,a);CURRFN(fn);res=popn(bi_cxxxrS(n,fn->sym),n);goto exit;
   apply_letloop:res=mk_cons(fn,evlis(x,a));goto exit;
   apply_sym: CURRFN(fn);fn=swp(assq_cdr(fn, a));goto apply;
@@ -2590,8 +2628,8 @@ static int yl_init(){
     mk_builtinMacro("#lap",bi_lap);
     mk_builtinLambda("eval",bi_eval);mk_builtinLambda("apply",bi_apply);
     mk_builtinMacro("let",bi_let);
-    mk_builtinMacro("cond",bi_cond);mk_builtinMacro("if",bi_if);
-    mk_builtinStack("car",bi_carS);mk_builtinStack("cdr",bi_cdrS);mk_builtinStack("cons",bi_consS);
+    mk_builtinMacro("cond",bi_cond);if_atom=mk_builtinMacro("if",bi_if);
+    mk_builtinStack("car",bi_carS);mk_builtinStack("cdr",bi_cdrS);cons_atom=mk_builtinStack("cons",bi_consS);
     mk_builtinStack("eq",bi_eqS);mk_builtinStack("equal",bi_equalS);mk_builtinStack("atom",bi_atomS);mk_builtinStack("null",bi_nullS);
     mk_builtinLambda("set",bi_set);mk_builtinMacro("setq",bi_setq);
     mk_builtinMacro("defun",bi_defun);mk_builtinMacro("defmacro",bi_defmacro);
@@ -2671,7 +2709,7 @@ int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
   yl_stdout=stdout;
-  printf("\n    \\/octoLISP\n ---/------------\n0.9.51 %s\n",__DATE__);
+  printf("\n    \\/octoLISP\n ---/------------\n0.99.02 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
   printf(SCOPING_MODE);
