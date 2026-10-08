@@ -8,7 +8,7 @@ garbage collector: mark-sweep.
 */
 
 //timing
-// 0.99.02 88% con suggerimenti di Space Bunny
+// 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall)
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
 //
 // 0.98.23
