@@ -7,7 +7,7 @@
     elap
 ))
 
-(defun bench-report(tt e)(princln "tot=" tt " exp=" e "  " (/ (* tt 100) e) "%" ""))
+(defun bench-report(tt e)(princln "tot=" tt " exp=" e "  " (/ (* tt 100) e) "% " (/ (* tt 1000) e) "%"))
 
 (defun be rl
   (let ((rep (if (null rl) 1 (car rl))))
