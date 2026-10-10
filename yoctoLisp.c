@@ -8,7 +8,7 @@ garbage collector: mark-sweep.
 */
 
 //timing
-// 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall)
+// 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall) 36% su exLuca con tutti i check
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
 //
 // 0.98.23
@@ -29,7 +29,9 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
-//
+// verificare il nome della funzione corrente
+// sistemare il controllo delle variabili #
+// fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
@@ -719,10 +721,11 @@ static cell* lap(const cell* x,cell* a,const int stackbase);
 
 static cell* curr_fn;
 
-void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
-int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
-void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
-void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
+static void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
+static void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
+static void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
+static inline int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
+static inline int getnprm(const cell *x,const int mi, const int ma,const char* msg){int np=count_params(x);if (np<mi || ma<np) wrongnparms(msg);return np;}
 #ifdef SAFE_CXR
 static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
 static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
@@ -1364,7 +1367,7 @@ static cell* bi_let(cell* x,cell* a){
      let: (let ((x 1) (y 2)) body...) - let* semantics (bindings evaluated in order)
      named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function
   */
-  int np=count_params(x);if (np!=2 && np!=3) wrongnparms("let");
+  int np=getnprm(x,2,3,"let");
   cell* res=push(a);
   cell* na=push(a);
   if (np==3) {
@@ -2136,7 +2139,7 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
     a=cdr(a); //a->cdr;
   }
   // and then in global environment
-  if (!x->globalassigned) yl_lerror_s(LISP_ERROR,"variable \"%s\" not found",x->sym);
+  if (!x->globalassigned) yl_lerror_ss(LISP_ERROR,"\"%s\":variable \"%s\" not found",curr_fn->sym,x->sym);
   return x->globalvalue;
 }
 
