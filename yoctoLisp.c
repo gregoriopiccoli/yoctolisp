@@ -723,7 +723,7 @@ static cell* curr_fn;
 void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
 static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
 static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
-int count_params(const cell* x){int n=0;while(x) {x=cdr(x);n++;};return n;}
+int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
 void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
 void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
 static inline void CHECK1PRM(const cell* x,const char* m){if (count_params(x)!=1) wrongnparms(m);}
