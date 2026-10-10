@@ -8,7 +8,7 @@ garbage collector: mark-sweep.
 */
 
 //timing
-// 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall)
+// 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall) 36% su exLuca con tutti i check
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
 //
 // 0.98.23
@@ -29,7 +29,7 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
-//
+// fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
 // sistemare la named let che funziona solo se è una tail call, bisognerebbe fare in modo che funzioni così quando è una tail call in altro modo quando non lo è ...
