@@ -1420,20 +1420,20 @@ static cell* bi_let(cell* x,cell* a){
     int loop=1;
     cell* fn=curr_fn;
     while (loop) {
-      res=pop2(cdr(x->cdr)?eval(car(x->cdr->cdr),na):0);
-      if (res && is_cons(res) && car(res)==loop_sym) {
+      res=pop2(x->cdr->cdr?eval(x->cdr->cdr->car,na):0);
+      if (res && is_cons(res) && res->car==loop_sym) {
         /* ricorsione: aggiorna binding con nuovi valori */
-        res=push(cdr(res));
+        res=push(res->cdr);
         na=push(basea);
-        l=car(x->cdr);
+        l=x->cdr->car;
         while(l){
           cell* car_l=car(l);
           if (!res || !is_cons(res)) yl_lerror_ss(LISP_ERROR,"named let \"%s\" recursion in \"%s\" with too few parameters",curr_fn->sym,fn->sym);
           if (atom(car_l)){
-            na=swp(mk_cons(mk_cons(car_l,car(res)),na));
+            na=swp(mk_cons(mk_cons(car_l,res->car),na));
           } else {
-            cell* n=car(car_l);
-            cell* v=car(res);
+            cell* n=car_l->car;
+            cell* v=res->car;
             na=swp(mk_cons(mk_cons(n,v),na));
           }
           l=l->cdr;
@@ -1634,12 +1634,13 @@ static cell* bi_progn(cell* x,cell* a){
   */
   cell* last=push(0);
   while (x){
+    cell* nx=cdr(x); // verifica che x sia una cons, così x->car è sicuro
 #ifdef TAILCALL
-    if (!cdr(x)) // ultima espessione, si può fare un tampolino
-      return pop(mk_trampoline(car(x),a));
+    if (!nx) // ultima espressione, si può fare un trampolino
+      return pop(mk_trampoline(x->car,a));
 #endif
-    last=swp(eval(car(x),a));
-    x=x->cdr;
+    last=swp(eval(x->car,a));
+    x=nx;
   }
   return pop(last);
 }
