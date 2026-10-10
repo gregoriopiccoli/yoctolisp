@@ -719,13 +719,13 @@ static cell* lap(const cell* x,cell* a,const int stackbase);
 
 static cell* curr_fn;
 
-#ifdef SAFE_CXR
 void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
-static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
-static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
 int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
 void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
 void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
+#ifdef SAFE_CXR
+static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
+static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
 static inline void CHECK1PRM(const cell* x,const char* m){if (count_params(x)!=1) wrongnparms(m);}
 static inline void CHECK2PRM(const cell* x,const char* m){if (count_params(x)!=2) wrongnparms(m);}
 static inline void CHECKNPRM(const cell* x,const int mi,const int ma,const char* m){int n=count_params(x); if (n<mi || ma<n) wrongnparms(m);}
@@ -1364,11 +1364,12 @@ static cell* bi_let(cell* x,cell* a){
      let: (let ((x 1) (y 2)) body...) - let* semantics (bindings evaluated in order)
      named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function
   */
+  int np=count_params(x);if (np!=2 && np!=3) wrongnparms("let");
   cell* res=push(a);
   cell* na=push(a);
-  if (x && atom(x->car)) {
+  if (np==3) {
     /* named let */
-    CHECKNPRM(x,3,3,"named let");
+    //CHECKNPRM(x,3,3,"named let");
     cell* l=car(x);
     if (!is_sym(l)) yl_lerror(LISP_ERROR,"named let requires a symbol");
     // tail version
@@ -1379,10 +1380,10 @@ static cell* bi_let(cell* x,cell* a){
     cell* loopfnprmsstart=swp(mk_cons(0,0));
     cell* loopfnprms=loopfnprmsstart;
     push(na);
-    cell* loopfnbody=car(cdr(cdr(x)));
+    cell* loopfnbody=x->cdr->cdr->car;
     //
     cell* basea=na;
-    l=car(x->cdr);
+    l=x->cdr->car;
     while (l) {
       cell* car_l=car(l);
       if (atom(car_l)){  // variabili non inizializzate (nil) - named let
@@ -1392,11 +1393,11 @@ static cell* bi_let(cell* x,cell* a){
         loopfnprms=loopfnprms->cdr;
         //
       } else {
-        cell* n=car(car_l);
+        cell* n=car_l->car;
         cell* v=eval(car(car_l->cdr),a); // this is for let, using "na" implements "let*"
         na=swp(mk_cons(mk_cons(n,v),na));
         // func version
-        loopfnprms->cdr=mk_cons(car(car_l),0);
+        loopfnprms->cdr=mk_cons(n,0);
         loopfnprms=loopfnprms->cdr;
         //
       }
@@ -1447,15 +1448,15 @@ static cell* bi_let(cell* x,cell* a){
     return res;
   } else {
     /* let */
-    CHECK2PRM(x,"let");
-    cell* l=car(x);
+    //CHECK2PRM(x,"let");
+    cell* l=x->car;
     while (l){
       cell* car_l=car(l);
       if (atom(car_l)){  // variabile non inizializzata → nil
         if (!is_sym(car_l)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         na=swp(mk_cons(mk_cons(car_l,0),na));
       } else {
-        cell* n=car(car_l);
+        cell* n=car_l->car;
         if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
         if (n->hashsym){
@@ -1469,9 +1470,9 @@ static cell* bi_let(cell* x,cell* a){
       l=l->cdr;
     }
 #ifdef TAILCALL
-    return pop2(cdr(x)?mk_trampoline(car(x->cdr),na):0);
+    return pop2(x->cdr?mk_trampoline(x->cdr->car,na):0);
 #else
-    return pop2(cdr(x)?eval(car(x->cdr),na):0);
+    return pop2(x->cdr?eval(x->cdr->car,na):0);
 #endif
   }
 }
@@ -1519,7 +1520,7 @@ static cell* bi_do(cell* x,cell* a){
       while(do_vars){
         cell* car_l=car(do_vars);
         if (is_cons(car_l)){
-          cell* n=car(car_l);
+          cell* n=car_l->car;
           if (!cdr(car_l->cdr)){
             // variabile con solo inizializzazione
             nna=swp(mk_cons(mk_cons(n,assq_cdr(n,na)),nna));
