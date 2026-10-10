@@ -719,10 +719,11 @@ static cell* lap(const cell* x,cell* a,const int stackbase);
 
 static cell* curr_fn;
 
-void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
-int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
-void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
-void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
+static void cons_expected(){yl_lerror_s(LISP_ERROR,"\"%s\": cons expected",curr_fn->sym);}
+static void toomanyparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": too many parameters",m,curr_fn->sym);}
+static void wrongnparms(const char * m){yl_lerror_ss(LISP_ERROR,"%s in \"%s\": wrong number of parameters",m,curr_fn->sym);}
+static inline int count_params(const cell* x){int n=0;while(x) {if (x->type!=TYPE_CONS) cons_expected();x=x->cdr;n++;};return n;}
+static inline int getnprm(const cell *x,const int mi, const int ma,const char* msg){int np=count_params(x);if (np<mi || ma<np) wrongnparms(msg);return np;}
 #ifdef SAFE_CXR
 static inline cell* car(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->car;}
 static inline cell* cdr(const cell* c){if (!c||c->type!=TYPE_CONS) cons_expected();return c->cdr;}
@@ -1364,7 +1365,7 @@ static cell* bi_let(cell* x,cell* a){
      let: (let ((x 1) (y 2)) body...) - let* semantics (bindings evaluated in order)
      named let: (let name ((x 1) (y 2)) body...) - creates recursive anonymous function
   */
-  int np=count_params(x);if (np!=2 && np!=3) wrongnparms("let");
+  int np=getnprm(x,2,3,"let");
   cell* res=push(a);
   cell* na=push(a);
   if (np==3) {
