@@ -849,7 +849,7 @@ static cell* bi_carS(const int n){
   const cell* c=yl_stk[yl_sp-1];
   if (!c) return 0; // car(nil) -> nil , come in common lisp
 #ifdef SAFE_CXR
-  CHECK_0(ATOM(c),LISP_ERROR,"applying \"car\" to an atom");
+  CHECK_S(ATOM(c),LISP_ERROR,"\"%s\": applying \"car\" to an atom",curr_fn->sym);
 #endif
   return c->car;
 }
@@ -859,7 +859,7 @@ static cell* bi_cdrS(const int n){
   const cell* c=yl_stk[yl_sp-1];
   if (!c) return 0; // cdr(nil) -> nil , come in common lisp
 #ifdef SAFE_CXR
-  CHECK_0(ATOM(c),LISP_ERROR,"applying \"cdr\" to an atom");
+  CHECK_S(ATOM(c),LISP_ERROR,"\"%s\": applying \"cdr\" to an atom",curr_fn->sym);
 #endif
   return c->cdr;
 }
@@ -1159,7 +1159,7 @@ static inline cell* popstackbase(cell* x,int old_base){current_stackbase=old_bas
 
 static cell* setv(cell* name,cell* value,cell* e){
   //cell* e=a;
-  CHECK_0(!name || name->type!=TYPE_SYM,LISP_ERROR,"set: not assigning to a symbol");
+  CHECK_S(!name || name->type!=TYPE_SYM,LISP_ERROR,"\"%s\": set: not assigning to a symbol",curr_fn->sym);
   if (name->hashsym){
 #ifdef SAFE_CXR
     if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
@@ -1894,7 +1894,7 @@ static cell* load(cell* n,cell* report){
     if (!lj){
       memcpy(yl_mainloop,local_mainloop,sizeof(jmp_buf));
       while(!feof(f)){
-				curr_fn=anon_atom;
+		curr_fn=anon_atom;
         n=read_sexpr(f);
         if (mode>=2){printf(" in:");print_sexpr(yl_stdout,n,1);printf("\n");}
         n=eval(n,0);
@@ -1913,7 +1913,7 @@ static cell* load(cell* n,cell* report){
 }
 
 static cell* bi_loadS(const int n){
-  CHECK_0(n==0,LISP_ERROR,"load: missing file name");
+  CHECK_S(n==0,LISP_ERROR,"\"%s\": load: missing file name",curr_fn->sym);
   cell* name=yl_stk[yl_sp-n];
   cell* report=(n>1?yl_stk[yl_sp-n+1]:0);
   return load(name,report);
@@ -2135,8 +2135,8 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
   }
   // search in current environment
   while (a) {
-    if (car(car(a))==x) return cdr(car(a)); //a->car->cdr;
-    a=cdr(a); //a->cdr;
+    if (car(car(a))==x) return a->car->cdr;
+    a=a->cdr;
   }
   // and then in global environment
   if (!x->globalassigned) yl_lerror_ss(LISP_ERROR,"\"%s\":variable \"%s\" not found",curr_fn->sym,x->sym);
@@ -2273,7 +2273,7 @@ static cell* apply_cons(cell* fn,cell* x,cell* a){
 
 static inline cell* apply(cell* fn,cell* x,cell* a) {
   CHECKFREECELL(fn)
-	//printf("apply:");print_sexpr(stdout,fn,1);printf(" args:");print_sexpr(stdout,x,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
+  //printf("apply:");print_sexpr(stdout,fn,1);printf(" args:");print_sexpr(stdout,x,1);printf(" env:");print_sexpr(stdout,a,1);printf("\n");
   CHECK_0(!fn,LISP_ERROR,"\"nil\" is not a function");
   return apply_by_type[(int)(fn->type)](fn,x,a);
 }
