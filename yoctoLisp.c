@@ -29,6 +29,8 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
+// verificare il nome della funzione corrente
+// sistemare il controllo delle variabili #
 // fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
@@ -2137,7 +2139,7 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
     a=cdr(a); //a->cdr;
   }
   // and then in global environment
-  if (!x->globalassigned) yl_lerror_s(LISP_ERROR,"variable \"%s\" not found",x->sym);
+  if (!x->globalassigned) yl_lerror_ss(LISP_ERROR,"\"%s\":variable \"%s\" not found",curr_fn->sym,x->sym);
   return x->globalvalue;
 }
 
