@@ -12,7 +12,7 @@ garbage collector: mark-sweep.
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
 //
 // 0.98.23
-//         44% 8100 --> 42% 7800 se trovo l'errore (con gc a pseudo generazioni ... trovatO. non risolvibile!)
+//         44% 8100 --> 42% 7800 se trovo l'errore (con gc a pseudo generazioni ... trovato. non risolvibile!)
 //                      43% 8000 risolto: marcare tutto e non fermarsi al primo 1
 // 0.98.22 17%          I:2061 S:1782 L:1032
 //         33% (fib 35) I:4247 S:3861 L:2217            pico:2152 picco:2126
@@ -30,7 +30,9 @@ garbage collector: mark-sweep.
 
 // cose da fare:
 // sistemare il controllo delle variabili #, per ora parziale
-// verificare il nome della funzione corrente
+// verificare il nome della funzione corrente per messaggi di errore
+// mancano le variabili # in named let, che da anche errore di compilazione #lambda
+// inventare una istruzione tipo try-catch per poter fare test anche di espressioni che danno errore (test-err <expr> "% error %" )
 // fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
