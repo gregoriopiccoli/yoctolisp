@@ -79,11 +79,11 @@ garbage collector: mark-sweep.
 // eliminare *plist* da system.yl -- non disturba ...
 
 #define LEXICAL_SCOPING
-#define TAILCALL
-#define SAFE_STACK
-#define SAFE_CXR
-//#define DEBUG_GC
-//#define DEBUG_C_MEMORY
+#define TAILCALL        // abilita l'ottimizzazione della tail call, stack molto meno stressato e penalizzazione minima
+#define SAFE_STACK      // più veloce ma insicuro, non viene controllato se si esce dai limiti dello stack
+#define SAFE_CXR        // più veloce ma insicuro, gli errori di sintassi portano a segfault
+//#define DEBUG_GC       // inserisce molti controlli sulla memoria, il GC viene strumentato per identificare possibili errori
+//#define DEBUG_C_MEMORY // attiva la libreria memwatch per il controllo della memoria da parte del linguaggio C
 //#define REPL_TIMING
 //#define EVAL_FUNCPTR // eval con puntatori a funzioni, altrimenti eval con apply integrata e computed goto
 
@@ -1336,9 +1336,9 @@ static cell* bi_apply(const int n,cell* a){
 static cell* bi_quote(cell* x,cell* a){
   //CHECK1PRM(x,"quote");
 #ifdef SAFE_CXR
-  if (!x || (x->type==TYPE_CONS && x->cdr)) wrongnparms("quote");
+  if (!x || x->type!=TYPE_CONS || x->cdr) wrongnparms("quote");
 #endif
-  return car(x);
+  return x->car;
 }
 
 static cell* bi_cond(cell* x,cell* a){
@@ -1348,12 +1348,14 @@ static cell* bi_cond(cell* x,cell* a){
      (cond ((test1 val1)(test2 val2) ... (testn valn) [(else val_else)] )
   */
   while(x){ //ATTENZIONE:  questa versione di cond torna NIL se nessun caso è vero (come common lisp)
+	cell *clause=car(x);
+	cell *test=car(clause);
 #ifdef TAILCALL
-    if (car(car(x))==else_atom) return mk_trampoline(car(x->car->cdr), a);
-    if (eval(x->car->car, a)) return mk_trampoline(car(x->car->cdr), a);
+    if (test==else_atom) return mk_trampoline(car(clause->cdr), a);
+    if (eval(test, a)) return mk_trampoline(car(clause->cdr), a);
 #else
-    if (car(car(x))==else_atom) return eval(car(x->car->cdr), a);
-    if (eval(x->car->car, a)) return eval(car(x->car->cdr), a);
+    if (test==else_atom) return eval(car(clause->cdr), a);
+    if (eval(test, a)) return eval(car(clause->cdr), a);
 #endif
     x=x->cdr;
   }
@@ -1491,17 +1493,17 @@ static cell* bi_do(cell* x,cell* a){
   */
   CHECKNPRM(x,2,3,"do");
   cell* na=push(a);
-  cell* do_vars=car(x);
-  cell* do_test=car(car(x->cdr));
-  cell* do_result=cdr(car(x->cdr));
-  cell* do_body=cdr(x->cdr);
+  cell* do_vars=x->car;
+  cell* do_test=car(x->cdr->car);
+  cell* do_result=cdr(x->cdr->car);
+  cell* do_body=x->cdr->cdr;
   while (do_vars){
     cell* car_l=car(do_vars);
     if(atom(car_l)){
       // caso di variabile senza inizializzazione
       na=swp(mk_cons(mk_cons(car_l,0),na));
     } else {
-      cell* n=car(car_l);
+      cell* n=car_l->car;
       cell* v=eval(car(car_l->cdr),a);
       na=swp(mk_cons(mk_cons(n,v),na));
     }
@@ -1516,10 +1518,10 @@ static cell* bi_do(cell* x,cell* a){
     loop=(test_result==0);
     if (loop){
       // valuta il corpo
-      if (do_body) eval(car(do_body),na);
+      if (do_body) eval(do_body->car,na);
       //esegue lo step delle variabili
       nna=push(a);
-      do_vars=car(x);
+      do_vars=x->car;
       while(do_vars){
         cell* car_l=car(do_vars);
         if (is_cons(car_l)){
@@ -1529,7 +1531,7 @@ static cell* bi_do(cell* x,cell* a){
             nna=swp(mk_cons(mk_cons(n,assq_cdr(n,na)),nna));
           } else {
             // variabile con step
-            cell* v=eval(car(cdr(car_l->cdr)),na);
+            cell* v=eval(car(car_l->cdr->cdr),na);
             nna=swp(mk_cons(mk_cons(n,v),nna));
           }
         } else {
@@ -1674,17 +1676,17 @@ static cell* bi_if(cell* x,cell* a){
      Esempio: (if (> 3 2) 'maggiore 'minore)
   */
   CHECKNPRM(x,2,3,"if");
-  if (eval(car(x),a))
+  if (eval(x->car,a)) // la CHECKNPRM verifica che ci sia una lista con esattamente 3 elementi e un nil finale
 #ifdef TAILCALL
-    return mk_trampoline(car(x->cdr),a);
+    return mk_trampoline(x->cdr->car,a);
 #else
-    return eval(car(x->cdr),a);
+    return eval(x->cdr->car,a);
 #endif
-  if (!cdr(x->cdr)) return 0; // without else
+  if (!x->cdr->cdr) return 0; // without else
 #ifdef TAILCALL
-  return mk_trampoline(car(x->cdr->cdr),a);
+  return mk_trampoline(x->cdr->cdr->car,a);
 #else
-  return eval(car(x->cdr->cdr),a);
+  return eval(x->cdr->cdr->car,a);
 #endif
 }
 
@@ -2338,20 +2340,19 @@ static cell* eval_cons(cell* e,cell* a){
         if (e->car==quote_atom) {
           cell* q=e->cdr;
 #ifdef SAFE_CXR
-          if (!q || (q->type==TYPE_CONS && q->cdr)) wrongnparms("quote");
+          if (!q || q->type!=TYPE_CONS || q->cdr) wrongnparms("quote");
 #endif
-          return car(q);
+          return q->car;
         }
         fn=e->car;
         x=e->cdr;
         // percorso veloce per "if": evita il dispatch, i tre push e il trampolino
         if (fn==if_atom) {
-          CURRFN(fn);
           CHECKNPRM(x,2,3,"if");
           push(a);                             // protegge l'ambiente durante la valutazione
-          cell* c=eval(car(x),a);
-          if (c) e=car(x->cdr);
-          else { cell* t=x->cdr->cdr; e=(t?car(t):0); }
+          cell* c=eval(x->car,a);
+          if (c) e=x->cdr->car;
+          else { cell* t=x->cdr->cdr; e=(t?t->car:0); }
           pop(0);
           goto tail_call;
         }
