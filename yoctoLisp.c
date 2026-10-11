@@ -29,8 +29,8 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
+// sistemare il controllo delle variabili #, per ora parziale
 // verificare il nome della funzione corrente
-// sistemare il controllo delle variabili #
 // fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
@@ -51,6 +51,7 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// -- 11/10/2026: ora sono arrivato a 86% nella debian mio Mac, credo di aver esaurito i miglioramenti con questa struttura, ora #lap e C --
 // LLM: fare una lista delle stringhe per liberarle rapidamente nel GC e poi avere un ciclo su tutte le celle senza "if" (le stringhe sono poche)
 // LLM: hashsym rapido anziché sym[0]='#'
 // output che scrive su file
@@ -1156,17 +1157,18 @@ static cell* bi_atS(int n){
   return mk_num(p-ss);
 }
 
-static int current_stackbase=0;
-static inline cell* popstackbase(cell* x,int old_base){current_stackbase=old_base;return x;}
+static int current_stackbase=0,current_hashcnt=0;
+static inline cell* popstackbase(cell* x,int old_base, int old_hcnt){current_stackbase=old_base;current_hashcnt=old_hcnt;return x;}
 
 static cell* setv(cell* name,cell* value,cell* e){
   //cell* e=a;
   CHECK_S(!name || name->type!=TYPE_SYM,LISP_ERROR,"\"%s\": set: not assigning to a symbol",curr_fn->sym);
   if (name->hashsym){
+    int hpos=name->sym[1]-'A';
 #ifdef SAFE_CXR
-    if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+    if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
-    yl_stk[current_stackbase+name->sym[1]-'A']=value;
+    yl_stk[current_stackbase+hpos]=value;
     return value;
   }
   while(e){
@@ -1467,10 +1469,11 @@ static cell* bi_let(cell* x,cell* a){
         if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
         if (n->hashsym){
+		  int hpos=n->sym[1]-'A';
 #ifdef SAFE_CXR
-          if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+          if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
-          yl_stk[current_stackbase+n->sym[1]-'A']=v;  // variabile speciale #A-#Z
+          yl_stk[current_stackbase+hpos]=v;  // variabile speciale #A-#Z
         } else
           na=swp(mk_cons(mk_cons(n,v),na));
       }
@@ -2132,10 +2135,11 @@ static inline cell* pairlis(cell* x, cell* y,cell* a) {
 
 static inline cell* assq_cdr(const cell* x,const cell* a) {
   if (x->hashsym) { // gestione delle variabili locali nello stack
+	int hpos=x->sym[1]-'A';  
 #ifdef SAFE_CXR
-    if (!current_stackbase) yl_lerror(LISP_ERROR,"# vars are active only in #lambda functions");
+    if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
-    return yl_stk[current_stackbase+x->sym[1]-'A'];
+    return yl_stk[current_stackbase+hpos];
   }
   // search in current environment
   while (a) {
@@ -2233,19 +2237,21 @@ static cell* apply_stacklambdatype(cell* fn,cell* x,cell* a){
   CHECK_S(!car(car(cdr(fn))) || car(car(cdr(fn)))->type!=TYPE_NUM,LISP_ERROR,"\"%s\" wrong parameters definition",curr_fn->str);
   int nparms=fn->cdr->car->car->value;
   int stackspace=fn->cdr->car->cdr->value;
-  if (nparms+stackspace>26) yl_lerror(LISP_ERROR,"too large parameters and stackpace for #lambda");
   int n,rest=0;
   if (nparms<0){
     nparms=-nparms-1;
     rest=1;
   }
+  if (nparms+stackspace>26) yl_lerror(LISP_ERROR,"too large parameters and stackpace for #lambda");
   n=evstackcnt(x,a,nparms,rest);
   int save_base=current_stackbase;
+  int save_hcnt=current_hashcnt;
   current_stackbase=lsp;
+  current_hashcnt=nparms+stackspace;
   CHECK_S(nparms!=n,LISP_ERROR,"\"%s\" wrong number of parameters",curr_fn->str);
   // crea lo spazio per le variabili locali e le inizializza a nil per non avere problemi di GC
   int i;for(i=0;i<stackspace;i++) yl_stk[yl_sp++]=0;
-  return popstackbase(popn(eval(car(cdr(cdr(fn))),get_closure(fn,a)),n+stackspace+rest),save_base);
+  return popstackbase(popn(eval(car(cdr(cdr(fn))),get_closure(fn,a)),n+stackspace+rest),save_base,save_hcnt);
 }
 
 static cell* apply_stacklambdalaptype(cell* fn,cell* x,cell* a){
@@ -2748,6 +2754,7 @@ int main(int argc,char* argv[]){
         printf("%s%s\n",(lj==SYSTEM_ERROR?"SYSTEM: ":""),yl_error_msg);
         yl_sp=0;
         current_stackbase=0;
+        current_hashcnt=0;
 	  }
     }
   }
@@ -2756,6 +2763,7 @@ int main(int argc,char* argv[]){
     if (!lj){
       yl_sp=0;
       current_stackbase=0;
+      current_hashcnt=0;
       curr_fn=anon_atom;
       printf("\n> ");
       input=read_sexpr(stdin);START_EVAL_TIME;
