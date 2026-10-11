@@ -91,11 +91,12 @@ garbage collector: mark-sweep.
 #define MAX_SYMS  1000   // symbols allocation block size (not garbage collected)
 #define MAX_STK   100000 // stack size
 
-#if defined(__GNUC__) && !defined(__clang__)
+//#if defined(__GNUC__) && !defined(__clang__)
 // la vettorizzazione SLP fonde letture adiacenti di yl_stk (es. yl_stk[yl_sp-2],yl_stk[yl_sp-1]) in un load da 16 byte
 // subito dopo due push da 8 byte: lo store-to-load forwarding fallisce e la CPU va in stallo (-22% sul bench "cons")
-#pragma GCC optimize("no-tree-slp-vectorize")
-#endif
+//#pragma GCC optimize("no-tree-slp-vectorize")
+// ... sembra che non serva
+//#endif
 
 #ifdef DEBUG_C_MEMORY
 #define MEMWATCH
@@ -546,7 +547,7 @@ static int issymchar(char c){
 }
 
 static int nexttoken(FILE *f){
-  int token;
+  int token,ch;
   char c = (next_char==-1?nextchar(f):(char)next_char);
   if (c == 0) return TOK_NONE;
   next_char=-1;
@@ -559,12 +560,13 @@ static int nexttoken(FILE *f){
     int i=0;
     if (c=='"'){
       do {
-        c =(char)fgetc(f);
+        ch=fgetc(f);
+        c=(char)ch;
         token_text[i++]=c;
         if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
-      } while(c!='"' && c!='\n' && c!=EOF);
+      } while(c!='"' && c!='\n' && ch!=EOF);
       token_text[i-1]=0;
-      if (c=='\n' || c==EOF) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
+      if (c=='\n' || ch==EOF) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
       token=TOK_STR;
     } else {
       do {
