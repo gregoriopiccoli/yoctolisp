@@ -1727,13 +1727,13 @@ static cell* bi_dolist(cell* x,cell* a){
      Esempio: (dolist (x '(1 2 3)) (print x))
   */
   cell* var=car(car(x));
-  cell* res=x->car->cdr->cdr;
+  cell* res=cdr(x->car->cdr);
   if (!var || !is_sym(var)) yl_lerror(LISP_ERROR,"\"dolist\" var expected");
   if (!atom(res)) res=res->car;
   cell* loopvar=push(mk_cons(var,0));
   cell* body;
   a=push(mk_cons(loopvar,a));
-  cell* lst=push(eval(car(cdr(x->car)),a));
+  cell* lst=push(eval(x->car->cdr->car,a));
   while(lst){
     rplacd(loopvar,car(lst));
     lst=cdr(lst);
