@@ -8,6 +8,7 @@ garbage collector: mark-sweep.
 */
 
 //timing
+// 0.99.03 86% sostituite 4 if con switch, cambiata la gestione degli hashsym
 // 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall) 36% su exLuca con tutti i check
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
 //
@@ -471,7 +472,7 @@ static cell* mk_sym(const char* n){
   c->globalassigned=0;
   c->lambdatype=LT_NOLAMBDA;
   c->gc=1;
-  c->hashsym=n[0]=='#';
+  c->hashsym=(n[0]=='#'?n[1]-'A'+1:0);
   // verifica se è una funzione cxxxr
   makeCxxxR(c);
   return c;
@@ -1166,9 +1167,9 @@ static cell* setv(cell* name,cell* value,cell* e){
   //cell* e=a;
   CHECK_S(!name || name->type!=TYPE_SYM,LISP_ERROR,"\"%s\": set: not assigning to a symbol",curr_fn->sym);
   if (name->hashsym){
-    int hpos=name->sym[1]-'A';
+    int hpos=name->hashsym-1;  //sym[1]-'A';
 #ifdef SAFE_CXR
-    if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
     yl_stk[current_stackbase+hpos]=value;
     return value;
@@ -1471,9 +1472,9 @@ static cell* bi_let(cell* x,cell* a){
         if (!is_sym(n)) yl_lerror(LISP_ERROR,"variable name not a symbol in let");
         cell* v=eval(car(car_l->cdr),a); // con "a" implementa la "let", con "na" implementa la "let*"
         if (n->hashsym){
-		  int hpos=n->sym[1]-'A';
+		  int hpos=n->hashsym-1; //sym[1]-'A';
 #ifdef SAFE_CXR
-          if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+          if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
           yl_stk[current_stackbase+hpos]=v;  // variabile speciale #A-#Z
         } else
@@ -2137,9 +2138,9 @@ static inline cell* pairlis(cell* x, cell* y,cell* a) {
 
 static inline cell* assq_cdr(const cell* x,const cell* a) {
   if (x->hashsym) { // gestione delle variabili locali nello stack
-	int hpos=x->sym[1]-'A';  
+	int hpos=x->hashsym-1; //sym[1]-'A';  
 #ifdef SAFE_CXR
-    if (hpos<0 || hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
 #endif
     return yl_stk[current_stackbase+hpos];
   }
@@ -2381,14 +2382,22 @@ static cell* eval_cons(cell* e,cell* a){
   apply:
   //printf("apply:");print_sexpr(stdout,fn,1);printf(" ");print_sexpr(stdout,a,1);printf("\n");
   CHECK_0(!fn,LISP_ERROR,"\"nil\" is not a function");
+  //
   // dispensa a rami diretti ordinati per frequenza: evita la predizione indiretta (che sbaglia ~80%)
-  {
+  /*{ // sembra che lo "switch" sia più veloce: 87% --> 84%
     int t=(int)fn->type;
     if (t==TYPE_BUILTINSTACK)   goto apply_builtinstack;
     if (t==TYPE_BUILTINMACRO)   goto apply_builtinmacro;
     if (t==TYPE_CONS)           goto apply_cons;
-    if (t==TYPE_SYM)            goto apply_sym;
+    if (t==TYPE_SYM)            goto apply_sym; 
+  }*/
+  switch (fn->type) { 
+    case TYPE_BUILTINSTACK:goto apply_builtinstack;
+    case TYPE_BUILTINMACRO:goto apply_builtinmacro;
+    case TYPE_CONS        :goto apply_cons;
+    case TYPE_SYM         :goto apply_sym; 
   }
+  //
   goto *apply_jump[(int)fn->type];
   apply_builtinlambda: n=evstack(x,a);/*CURRFN(fn)*/;res=popn(fn->builtinlambda(n,a),n);goto exit;
   apply_builtinmacro: res=fn->builtinmacro(x,a);goto exit;
@@ -2725,7 +2734,7 @@ int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
   yl_stdout=stdout;
-  printf("\n    \\/octoLISP\n ---/------------\n0.99.02 %s\n",__DATE__);
+  printf("\n    \\/octoLISP\n ---/------------\n0.99.03 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
   printf(SCOPING_MODE);
