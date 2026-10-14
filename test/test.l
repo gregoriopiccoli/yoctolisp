@@ -1,5 +1,9 @@
 (load "testsuite.l")
 
+; --- due test solo per verificare che non diventino errori
+;(load "syntax_check.l")
+(load "testCompLet.l")
+
 ; -- alcune funzioni utili --
 
 (defun dbl(x) (+ x x))

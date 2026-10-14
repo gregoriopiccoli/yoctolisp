@@ -2179,7 +2179,8 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
   }
   // search in current environment
   while (a) {
-    if (a->car->car==x) return a->car->cdr; // qui SpaceBunny dice che non è necessario car(car(a))
+    cell* b=a->car; // qui SpaceBunny dice che non è necessario car(car(a))
+    if (b->car==x) return b->cdr;
     a=a->cdr;
   }
   // and then in global environment
