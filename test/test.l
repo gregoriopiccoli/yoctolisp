@@ -305,6 +305,17 @@
 (test (list +5 -3 007 -0 0 12) '(5 -3 7 0 0 12) "numeri con segno, zeri iniziali e senza segno")
 (test (list (nump +5) (nump -3) (nump 12) (nump 'abc) (nump "a")) '(t t t nil nil) "nump sui numeri letti dal lettore")
 (test (list 'nil nil '() () 'a) '(nil nil nil nil a) "nil come vuoto e come simbolo")
-
 )
+
+(if (safecxr) 
+(test-suite "-- Errori di sintassi --"
+; --- errori di sintassi
+(test (strp (try var_che_non_esiste)) t  "non da errore var_che_non_esiste")
+(test (strp (try (car 1))) t  "non da errore (car 1)")
+
+(test (strp (try (list 1 2 . 3))) t "non da errore (list 1 2 . 3)")
+(test (strp (try (let (x . y) 1))) t  "non da errore (let (x . y) 1)")
+(test (strp (try (let (x y). 1))) t  "non da errore (let (x y). 1)")
+
+))
 

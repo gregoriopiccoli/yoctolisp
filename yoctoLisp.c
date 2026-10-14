@@ -30,10 +30,9 @@ garbage collector: mark-sweep.
 #include <limits.h>
 
 // cose da fare:
-// sistemare il controllo delle variabili #, per ora parziale
 // verificare il nome della funzione corrente per messaggi di errore
 // mancano le variabili # in named let, che da anche errore di compilazione #lambda
-// inventare una istruzione tipo try-catch per poter fare test anche di espressioni che danno errore (test-err <expr> "% error %" )
+// la "try" è (try <expr>), si potrebbe fare (try <expr> (lambda(x)(..)) che riceve il valore di throw  
 // fatto "getnprm" che permette di proteggere la lista per tutti i casi di parametri variabili, usata nella "let", forse si può usare da altre parti
 // LLM: togliere il check dello stack da "push" e mettere un check se c'è abbastanza spazio nello stack all'inizio delle funzioni
 // assembler per #lambdalap e #lap
@@ -54,6 +53,10 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// la "try" è (try <expr>) e torna nil se ok, una stringa con messaggio di errore e va bene per i test della sintassi
+// fatto "try" per testare gli errori di sintassi (try <expr>), creata anche "safecxr" perché danno "seg. fault" se senza SAFE_CXR
+// inventare una istruzione tipo try-catch per poter fare test anche di espressioni che danno errore (test-err <expr> "% error %" )
+// sistemato il controllo delle variabili #
 // -- 11/10/2026: ora sono arrivato a 86% nella debian mio Mac, credo di aver esaurito i miglioramenti con questa struttura, ora #lap e C --
 // LLM: fare una lista delle stringhe per liberarle rapidamente nel GC e poi avere un ciclo su tutte le celle senza "if" (le stringhe sono poche)
 // LLM: hashsym rapido anziché sym[0]='#'
@@ -1169,7 +1172,7 @@ static cell* setv(cell* name,cell* value,cell* e){
   if (name->hashsym){
     int hpos=name->hashsym-1;  //sym[1]-'A';
 #ifdef SAFE_CXR
-    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda function");
 #endif
     yl_stk[current_stackbase+hpos]=value;
     return value;
@@ -1474,7 +1477,7 @@ static cell* bi_let(cell* x,cell* a){
         if (n->hashsym){
 		  int hpos=n->hashsym-1; //sym[1]-'A';
 #ifdef SAFE_CXR
-          if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+          if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda function");
 #endif
           yl_stk[current_stackbase+hpos]=v;  // variabile speciale #A-#Z
         } else
@@ -1947,6 +1950,36 @@ static cell* bi_outputS(const int n){
   return t_atom;
 }
 
+static cell* bi_safecxrS(int n){
+#ifdef SAFE_CXR
+  return t_atom;
+#else
+  return 0;
+#endif  
+}
+	
+// (try (car 1)) -> stringa con il messaggio di errore se da errore , nil se non da errore
+static cell* bi_try(cell* x, cell* a){
+  CHECK1PRM(x,"try");	
+  jmp_buf old_mainloop,try_loop;
+  memcpy(old_mainloop,yl_mainloop,sizeof(jmp_buf));
+  int old_yl_sp=yl_sp,old_current_stackbase=current_stackbase,old_current_hashcnt=current_hashcnt;
+  int lj=setjmp(try_loop);
+  if (!lj){		
+    memcpy(yl_mainloop,try_loop,sizeof(jmp_buf));
+    eval(x->car,a); // questa funzione può dare errore
+    memcpy(yl_mainloop,old_mainloop,sizeof(jmp_buf));
+    return 0;
+  } else {
+    memcpy(yl_mainloop,old_mainloop,sizeof(jmp_buf));
+    yl_sp=old_yl_sp;
+    current_stackbase=old_current_stackbase;
+    current_hashcnt=old_current_hashcnt;
+    return mk_str(yl_error_msg);
+  }
+  return 0;
+}
+
 #ifdef _WIN32
 #include <windows.h>
 //extern unsigned long GetTickCount();
@@ -2054,8 +2087,8 @@ static inline cell* make_closure(const cell* f,cell* a){ // build a closure from
   return res;
 }
 static inline cell* get_closure(const cell* f,cell* a){ // get closure enviriment
-  //cell* env=f->cdr->cdr->cdr;
-  cell* env=cdr(cdr(cdr(f)));
+  cell* env=f->cdr->cdr->cdr; // qui SpaceBunny dice che non è necessario
+  //cell* env=cdr(cdr(cdr(f)));
   if (env) return (env==invisible_atom?0:env);
   return a;
 }
@@ -2140,13 +2173,13 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
   if (x->hashsym) { // gestione delle variabili locali nello stack
 	int hpos=x->hashsym-1; //sym[1]-'A';  
 #ifdef SAFE_CXR
-    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda functions");
+    if (hpos>=current_hashcnt) yl_lerror(LISP_ERROR,"# var out of bound in #lambda function");
 #endif
     return yl_stk[current_stackbase+hpos];
   }
   // search in current environment
   while (a) {
-    if (car(car(a))==x) return a->car->cdr;
+    if (a->car->car==x) return a->car->cdr; // qui SpaceBunny dice che non è necessario car(car(a))
     a=a->cdr;
   }
   // and then in global environment
@@ -2609,7 +2642,7 @@ static int yl_init(){
   int i,res=0;
   yl_free_cells=0;yl_fcb=0;yl_lcb=0;yl_nblocks=0; // start with no unused cells
   yl_nsyms=0;yl_fsb=0;yl_lsb=0;yl_nsymsblocks=0; // start with an empty symbol table
-  yl_ngc=yl_sp=0;
+  yl_ngc=0;yl_sp=0;current_stackbase=0;current_hashcnt=0;
   i=setjmp(yl_mainloop);
   if (!i){
     for(i=0;i<MAX_NUM_CACHE;i++){
@@ -2678,6 +2711,7 @@ static int yl_init(){
     mk_builtinStack("rplaca",bi_rplacaS);mk_builtinStack("rplacd",bi_rplacdS);
     mk_builtinStack("len",bi_lenS);mk_builtinStack("substr",bi_substrS);mk_builtinStack("at",bi_atS);mk_builtinStack("nth",bi_nthS);
     mk_builtinStack("rand",bi_rand);mk_builtinStack("randomize",bi_randomize);
+    mk_builtinMacro("try",bi_try);mk_builtinStack("safecxr",bi_safecxrS);
     load(mk_str("system.yl"),0);
     res=1;
   } else {
