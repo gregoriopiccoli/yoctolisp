@@ -8,6 +8,7 @@ garbage collector: mark-sweep.
 */
 
 //timing
+// 0.99.04 85% in exLuca 32%
 // 0.99.03 86% sostituite 4 if con switch, cambiata la gestione degli hashsym
 // 0.99.02 87% con suggerimenti di Space Bunny, con TAILCALL, SAFE_STACK e SAFE_CXR (80% unsafe ma con tailcall) 36% su exLuca con tutti i check
 // 0.99.01 99% su apple M2 Pro 19 core (moltiplicato per 10 rispetto a tempi precedenti)
@@ -53,6 +54,7 @@ garbage collector: mark-sweep.
 // moduli, oggetti e classi
 
 // cose fatte:
+// fatto " dentro stringa (doppio apice "alfa "" beta")
 // la "try" è (try <expr>) e torna nil se ok, una stringa con messaggio di errore e va bene per i test della sintassi
 // fatto "try" per testare gli errori di sintassi (try <expr>), creata anche "safecxr" perché danno "seg. fault" se senza SAFE_CXR
 // inventare una istruzione tipo try-catch per poter fare test anche di espressioni che danno errore (test-err <expr> "% error %" )
@@ -566,14 +568,26 @@ static int nexttoken(FILE *f){
     token=TOK_SYM;
     int i=0;
     if (c=='"'){
-      do {
-        ch=fgetc(f);
+      int ended=0;
+      while ((ch=fgetc(f))!=EOF){
         c=(char)ch;
+        if (c=='"'){
+          ch=fgetc(f);
+          if (ch=='"'){                    // doppio apice: apice dentro la stringa
+            token_text[i++]='"';
+            if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
+            continue;
+          }
+          if (ch!=EOF && !isspace((char)ch)) next_char=(char)ch; // il carattere letto non era un apice
+          ended=1;
+          break;
+        }
+        if (c=='\n') break;
         token_text[i++]=c;
         if (i==MAX_TOKEN_LEN) yl_lerror(LISP_ERROR,"token too large");
-      } while(c!='"' && c!='\n' && ch!=EOF);
-      token_text[i-1]=0;
-      if (c=='\n' || ch==EOF) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
+      }
+      token_text[i]=0;
+      if (!ended) yl_lerror_s(LISP_ERROR,"non terminating string \"%s\"",token_text);
       token=TOK_STR;
     } else {
       do {
@@ -679,7 +693,14 @@ static void print_sexpr(FILE* f,cell* c,int mode){
   if (c){
     switch(c->type){
     case TYPE_NUM:fprintf(f,"%i",c->value);break;
-    case TYPE_STR:fprintf(f,(mode?"\"%s\"":"%s"),c->str);break;
+    case TYPE_STR:
+      if (mode){
+        char* p;
+        fputc('"',f);
+        for (p=c->str;*p;p++){ if (*p=='"') fputc('"',f); fputc(*p,f); }
+        fputc('"',f);
+      } else fprintf(f,"%s",c->str);
+      break;
     case TYPE_SYM:
     case TYPE_KEYWORD:
     case TYPE_CXR:
@@ -2184,7 +2205,7 @@ static inline cell* assq_cdr(const cell* x,const cell* a) {
     a=a->cdr;
   }
   // and then in global environment
-  if (!x->globalassigned) yl_lerror_ss(LISP_ERROR,"\"%s\":variable \"%s\" not found",curr_fn->sym,x->sym);
+  if (!x->globalassigned) yl_lerror_ss(LISP_ERROR,"\"%s\": variable \"%s\" not found",curr_fn->sym,x->sym);
   return x->globalvalue;
 }
 
@@ -2769,7 +2790,7 @@ int main(int argc,char* argv[]){
   int stop=0,lj;
   cell *res,*input;
   yl_stdout=stdout;
-  printf("\n    \\/octoLISP\n ---/------------\n0.99.03 %s\n",__DATE__);
+  printf("\n    \\/octoLISP\n ---/------------\n0.99.04 %s\n",__DATE__);
   if (argc>1 && (strcmp(argv[1],"-h")==0 || strcmp(argv[1],"--help")==0)) {printf("\nyl [<file1.l> ... [ <fileN.l> | -bye]]\n");return 0;}
   //printf("SYSTEM: cell size %i, cell* size %i, long long int size %i\n",sizeof(cell),sizeof(cell*),sizeof(long long int));
   printf(SCOPING_MODE);
